@@ -7,12 +7,14 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
+using namespace std;
+
 const int PORT = 8080;
 
-std::vector<SOCKET> clients;
+vector<SOCKET> clients;
 int num_clients = 0; // Переменная для хранения количества подключенных клиентов
 
-void broadcast_message(std::string message, SOCKET sender)
+void broadcast_message(string message, SOCKET sender)
 {
     for (auto client : clients)
     {
@@ -32,16 +34,16 @@ void handle_client(SOCKET client_socket)
         int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
         if (bytes_received <= 0)
         {
-            std::cout << "Client disconnected." << std::endl;
+            cout << "Client disconnected." << endl;
             closesocket(client_socket);
-            clients.erase(std::remove(clients.begin(), clients.end(), client_socket), clients.end());
+            clients.erase(remove(clients.begin(), clients.end(), client_socket), clients.end());
             num_clients--;
-            std::cout << "Current number of clients: " << num_clients << std::endl;
+            cout << "Current number of clients: " << num_clients << endl;
             break;
         }
 
-        std::string message(buffer, bytes_received);
-        std::cout << "Received from client: " << message << std::endl;
+        string message(buffer, bytes_received);
+        cout << "Received from client: " << message << endl;
         broadcast_message(message, client_socket);
     }
 }
@@ -49,15 +51,15 @@ void handle_client(SOCKET client_socket)
 int main()
 {
     int MAX_CLIENTS;
-    std::cout << "Write max clients on server: ";
-    std::cin >> MAX_CLIENTS;
+    cout << "Write max clients on server: ";
+    cin >> MAX_CLIENTS;
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
     SOCKET server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server_socket == INVALID_SOCKET)
     {
-        std::cerr << "Failed to create socket." << std::endl;
+        cerr << "Failed to create socket." << endl;
         return 1;
     }
 
@@ -68,33 +70,33 @@ int main()
 
     if (bind(server_socket, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR)
     {
-        std::cerr << "Failed to bind socket." << std::endl;
+        cerr << "Failed to bind socket." << endl;
         closesocket(server_socket);
         return 1;
     }
 
     if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR)
     {
-        std::cerr << "Failed to listen on socket." << std::endl;
+        cerr << "Failed to listen on socket." << endl;
         closesocket(server_socket);
         return 1;
     }
 
-    std::cout << "Server is listening on port " << PORT << "." << std::endl;
+    cout << "Server is listening on port " << PORT << "." << endl;
 
     while (true)
     {
         SOCKET client_socket = accept(server_socket, NULL, NULL);
         if (client_socket == INVALID_SOCKET)
         {
-            std::cerr << "Failed to accept connection." << std::endl;
+            cerr << "Failed to accept connection." << endl;
             continue;
         }
 
         // Проверка на максимальное количество клиентов
         if (num_clients >= MAX_CLIENTS)
         {
-            std::cerr << "Maximum number of clients reached. Connection rejected." << std::endl;
+            cerr << "Maximum number of clients reached. Connection rejected." << endl;
 
             // Отправляем сообщение клиенту о превышении лимита
             const char* error_message = "Connection refused: maximum number of clients reached.\n";
@@ -106,9 +108,9 @@ int main()
 
         clients.push_back(client_socket);
         num_clients++;
-        std::cout << "New client connected. Current number of clients: " << num_clients << std::endl;
+        cout << "New client connected. Current number of clients: " << num_clients << endl;
 
-        std::thread client_thread(handle_client, client_socket);
+        thread client_thread(handle_client, client_socket);
         client_thread.detach();
     }
 
