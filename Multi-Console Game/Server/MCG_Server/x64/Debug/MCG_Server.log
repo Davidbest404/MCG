@@ -1,0 +1,11 @@
+﻿  MCG_Server.cpp
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(105,72): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(117,68): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(126,68): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(129,66): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(136,65): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(148,59): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(157,61): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(160,63): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\MCG_Server.cpp(164,68): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+  MCG_Server.vcxproj -> C:\Users\Самвел\Documents\GitHub\ITHUB_CT\OUP\MCG_Server\x64\Debug\MCG_Server.exe

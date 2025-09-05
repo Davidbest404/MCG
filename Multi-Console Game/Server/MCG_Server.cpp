@@ -4,6 +4,7 @@
 #include <thread>
 #include <vector>
 #include <string>
+#include <map>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -11,10 +12,15 @@ using namespace std;
 
 const int PORT = 8080;
 
+// Список активных клиентов и их сокеты
 vector<SOCKET> clients;
-int num_clients = 0; // Переменная для хранения количества подключенных клиентов
+int num_clients = 0;
 
-void broadcast_message(string message, SOCKET sender)
+// Карта для сохранения соответствия сокета и имени пользователя
+map<SOCKET, string> usernames;
+
+// Функция рассылки сообщений всем клиентам, кроме отправителя
+void broadcast_message(const string& message, SOCKET sender)
 {
     for (auto client : clients)
     {
@@ -25,9 +31,72 @@ void broadcast_message(string message, SOCKET sender)
     }
 }
 
+// Глобальное объявление функции проверки имени и пароля
+bool check_credentials(const std::string& username, const std::string& password);
+
+// Проверка имени и пароля (теперь разрешена любая комбинация)
+bool check_credentials(const std::string& username, const std::string& password)
+{
+    // Просто возвращаем true, позволяя зарегистрировать любое имя и пароль
+    return true;
+}
+
+// Обработчик запросов клиентов
 void handle_client(SOCKET client_socket)
 {
     char buffer[1024];
+    bool authenticated = false;
+
+    while (!authenticated)
+    {
+        memset(buffer, 0, sizeof(buffer));
+        int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+
+        if (bytes_received <= 0)
+        {
+            // Клиент отключился во время авторизации
+            cout << "Client disconnected during authentication." << endl;
+            closesocket(client_socket);
+            return;
+        }
+
+        string packet(buffer, bytes_received);
+        size_t pos = packet.find('|'); // Разделение данных на части
+        if (packet.substr(0, pos) == "AUTH")
+        {
+            // Извлекаем имя и пароль
+            string credentials = packet.substr(pos + 1);
+            size_t next_pos = credentials.find('|');
+            string username = credentials.substr(0, next_pos);
+            string password = credentials.substr(next_pos + 1);
+
+            // Проверка пары имя-пароль (разрешено всё!)
+            if (check_credentials(username, password))
+            {
+                authenticated = true;
+                usernames[client_socket] = username; // Присваиваем имя пользователю
+                send(client_socket, "OK", 3, 0); // Подтверждение успеха авторизации
+            }
+            else
+            {
+                // Возвращаем ошибку и предлагаем правильный формат
+                string error_message = "Invalid format. Use AUTH|username|password\n";
+                send(client_socket, error_message.c_str(), error_message.size() + 1, 0);
+                closesocket(client_socket);
+                return;
+            }
+        }
+        else
+        {
+            // Если передан неправильный формат команды
+            string error_message = "Incorrect command format. Please use AUTH|username|password\n";
+            send(client_socket, error_message.c_str(), error_message.size() + 1, 0);
+            closesocket(client_socket);
+            return;
+        }
+    }
+
+    // Обычный цикл работы с сообщениями
     while (true)
     {
         memset(buffer, 0, sizeof(buffer));
@@ -42,9 +111,14 @@ void handle_client(SOCKET client_socket)
             break;
         }
 
-        string message(buffer, bytes_received);
-        cout << "Received from client: " << message << endl;
-        broadcast_message(message, client_socket);
+        // Чистые сообщения без добавления имени пользователя
+        string clean_message(buffer, bytes_received);
+
+        // Подписываем сообщение именем пользователя
+        string signed_message = usernames[client_socket] + ": " + clean_message;
+
+        // Рассылка подписанного сообщения всем остальным клиентам
+        broadcast_message(signed_message, client_socket);
     }
 }
 
@@ -96,7 +170,7 @@ int main()
         // Проверка на максимальное количество клиентов
         if (num_clients >= MAX_CLIENTS)
         {
-            cerr << "Maximum number of clients reached. Connection rejected." << endl;
+            cerr << "The connection attempt was rejected due to exceeding the maximum number of" << endl;
 
             // Отправляем сообщение клиенту о превышении лимита
             const char* error_message = "Connection refused: maximum number of clients reached.\n";
