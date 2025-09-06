@@ -1,14 +1,13 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\",
+  "WorkspaceRootPath": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\MCG_Client.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:MCG_Client.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\.gitignore||{3B902123-F8A7-4915-9F01-361F908088D0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:.gitignore||{3B902123-F8A7-4915-9F01-361F908088D0}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\.gitignore||{3B902123-F8A7-4915-9F01-361F908088D0}"
     }
   ],
   "DocumentGroupContainers": [
@@ -24,11 +23,11 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "MCG_Client.cpp",
-              "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\MCG_Client.cpp",
+              "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp",
               "RelativeDocumentMoniker": "MCG_Client.cpp",
-              "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\MCG_Client.cpp",
+              "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp",
               "RelativeToolTip": "MCG_Client.cpp",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAGQAAAAIAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2025-08-18T21:20:57.539Z",
               "EditorCaption": ""
@@ -38,13 +37,12 @@
               "DocumentIndex": 1,
               "Title": ".gitignore",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\.gitignore",
-              "RelativeDocumentMoniker": ".gitignore",
+              "RelativeDocumentMoniker": "..\\Multi-Console Game\\Client\\.gitignore",
               "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Multi-Console Game\\Client\\.gitignore",
-              "RelativeToolTip": ".gitignore",
+              "RelativeToolTip": "..\\Multi-Console Game\\Client\\.gitignore",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2025-08-18T21:20:56.451Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-08-18T21:20:56.451Z"
             }
           ]
         }
