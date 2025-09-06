@@ -17,7 +17,16 @@ vector<SOCKET> clients;
 int num_clients = 0;
 
 // Карта для сохранения соответствия сокета и имени пользователя
-map<SOCKET, string> usernames;
+map<SOCKET, pair<string, int>> users_and_ids; // теперь храним пару {имя, id}
+
+// Следующий свободный идентификатор
+int next_id = 1;
+
+// Добавление нового пользователя с присвоением идентификатора
+void add_user(SOCKET client_socket, const string& username)
+{
+    users_and_ids[client_socket] = make_pair(username, next_id++); // добавляем новое уникальное ID
+}
 
 // Функция рассылки сообщений всем клиентам, кроме отправителя
 void broadcast_message(const string& message, SOCKET sender)
@@ -74,8 +83,8 @@ void handle_client(SOCKET client_socket)
             if (check_credentials(username, password))
             {
                 authenticated = true;
-                usernames[client_socket] = username; // Присваиваем имя пользователю
-                send(client_socket, "OK", 3, 0); // Подтверждение успеха авторизации
+                add_user(client_socket, username); // Присваиваем ID пользователю
+                send(client_socket, "OK", 3, 0); // Подтверждаем успешную регистрацию
             }
             else
             {
@@ -107,13 +116,17 @@ void handle_client(SOCKET client_socket)
             break;
         }
 
-        // Чистые сообщения без добавления имени пользователя
+        // Получаем сообщение
         string clean_message(buffer, bytes_received);
 
-        // Подписываем сообщение именем пользователя
-        string signed_message = usernames[client_socket] + ": " + clean_message;
+        // Извлекаем ID пользователя
+        int user_id = users_and_ids[client_socket].second;
+        string username = users_and_ids[client_socket].first;
 
-        // Рассылка подписанного сообщения всем остальным клиентам
+        // Формируем подпись с ID и именем пользователя
+        string signed_message = "[" + to_string(user_id) + "] " + username + ": " + clean_message;
+
+        // Рассылаем подписанное сообщение другим пользователям
         broadcast_message(signed_message, client_socket);
     }
 }
