@@ -243,9 +243,9 @@ void Write_txt(string filename) {
 void Read_txt(string filename) {
     ifstream world(filename); // Открываем файл для чтения
 
-    if (!world.is_open()) { // Проверяем успешность открытия файла
+    /*if (!world.is_open()) { // Проверяем успешность открытия файла
         cerr << "Coudn't open file" << endl;
-    }
+    }*/
 
     string line;
     while (getline(world, line)) { // Читаем файл построчно

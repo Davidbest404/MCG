@@ -1,203 +1,338 @@
 ﻿#include <iostream>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <cstring>
 #include <thread>
 #include <vector>
 #include <string>
 #include <map>
+#include <algorithm>
+#include <atomic>
 
+// Определяем платформу
+#ifdef _WIN32
+#define PLATFORM_WINDOWS 1
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
+
+// Windows-specific
+#define SHUT_RDWR SD_BOTH
+#ifndef SOMAXCONN
+#define SOMAXCONN 0x7fffffff
+#endif
+#else
+#define PLATFORM_WINDOWS 0
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <sys/types.h>
+
+// POSIX constants
+#define INVALID_SOCKET -1
+#define SOCKET_ERROR -1
+#endif
+
+// Кроссплатформенные типы
+#ifdef _WIN32
+typedef SOCKET socket_t;
+#define socket_close closesocket
+#define socket_errno WSAGetLastError()
+#else
+typedef int socket_t;
+#define socket_close close
+#define socket_errno errno
+#endif
 
 using namespace std;
 
 const int PORT = 8080;
 
-// Список активных клиентов и их сокеты
-vector<SOCKET> clients;
-int num_clients = 0;
+// Глобальные данные
+vector<socket_t> clients;
+atomic<int> client_count(0);
+map<socket_t, pair<string, int>> client_info;
+atomic<int> next_client_id(1);
 
-// Карта для сохранения соответствия сокета и имени пользователя
-map<SOCKET, pair<string, int>> users_and_ids; // теперь храним пару {имя, id}
-
-// Следующий свободный идентификатор
-int next_id = 1;
-
-// Добавление нового пользователя с присвоением идентификатора
-void add_user(SOCKET client_socket, const string& username)
-{
-    users_and_ids[client_socket] = make_pair(username, next_id++); // добавляем новое уникальное ID
-}
-
-// Функция рассылки сообщений всем клиентам, кроме отправителя
-void broadcast_message(const string& message, SOCKET sender)
-{
-    for (auto client : clients)
-    {
-        if (client != sender)
-        {
-            send(client, message.c_str(), message.size() + 1, 0);
-        }
+// Инициализация сети
+bool network_init() {
+#ifdef _WIN32
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        cerr << "WSAStartup failed" << endl;
+        return false;
     }
-}
-
-// Глобальное объявление функции проверки имени и пароля
-bool check_credentials(const std::string& username, const std::string& password);
-
-// Проверка имени и пароля (теперь разрешена любая комбинация)
-bool check_credentials(const std::string& username, const std::string& password)
-{
-    // Просто возвращаем true, позволяя зарегистрировать любое имя и пароль
+#endif
     return true;
 }
 
-// Обработчик запросов клиентов
-void handle_client(SOCKET client_socket)
-{
-    char buffer[1024];
-    bool authenticated = false;
+// Очистка сети
+void network_cleanup() {
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
 
-    while (!authenticated)
-    {
-        memset(buffer, 0, sizeof(buffer));
-        int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+// Создание сокета
+socket_t socket_create() {
+    return ::socket(AF_INET, SOCK_STREAM, 0);
+}
 
-        if (bytes_received <= 0)
-        {
-            // Клиент отключился во время авторизации
-            cout << "Client disconnected during authentication." << endl;
-            closesocket(client_socket);
-            break;
+// Привязка сокета к адресу
+int socket_bind(socket_t sock, const struct sockaddr* addr, socklen_t addrlen) {
+    return ::bind(sock, addr, addrlen);
+}
+
+// Начало прослушивания
+int socket_listen(socket_t sock, int backlog) {
+    return ::listen(sock, backlog);
+}
+
+// Принятие соединения
+socket_t socket_accept(socket_t sock, struct sockaddr* addr, socklen_t* addrlen) {
+    return ::accept(sock, addr, addrlen);
+}
+
+// Отправка данных
+int socket_send(socket_t sock, const char* data, size_t length) {
+#ifdef _WIN32
+    return send(sock, data, static_cast<int>(length), 0);
+#else
+    return send(sock, data, length, 0);
+#endif
+}
+
+// Получение данных
+int socket_recv(socket_t sock, char* buffer, size_t buffer_size) {
+#ifdef _WIN32
+    return recv(sock, buffer, static_cast<int>(buffer_size), 0);
+#else
+    return recv(sock, buffer, buffer_size, 0);
+#endif
+}
+
+// Установка опций сокета
+int socket_setopt(socket_t sock, int level, int optname, const void* optval, socklen_t optlen) {
+#ifdef _WIN32
+    return setsockopt(sock, level, optname, reinterpret_cast<const char*>(optval), optlen);
+#else
+    return setsockopt(sock, level, optname, optval, optlen);
+#endif
+}
+
+// Рассылка сообщения всем клиентам кроме отправителя
+void broadcast_message(const string& message, socket_t sender) {
+    for (auto client : clients) {
+        if (client != sender) {
+            socket_send(client, message.c_str(), message.length());
         }
-
-        string packet(buffer, bytes_received);
-        size_t pos = packet.find('|'); // Разделение данных на части
-        if (packet.substr(0, pos) == "AUTH")
-        {
-            // Извлекаем имя и пароль
-            string credentials = packet.substr(pos + 1);
-            size_t next_pos = credentials.find('|');
-            string username = credentials.substr(0, next_pos);
-            string password = credentials.substr(next_pos + 1);
-
-            // Проверка пары имя-пароль (разрешено всё!)
-            if (check_credentials(username, password))
-            {
-                authenticated = true;
-                add_user(client_socket, username); // Присваиваем ID пользователю
-                send(client_socket, "OK", 3, 0); // Подтверждаем успешную регистрацию
-            }
-            else
-            {
-                // Возвращаем ошибку и предлагаем правильный формат
-                string error_message = "Invalid format. Use AUTH|username|password\n";
-                send(client_socket, error_message.c_str(), error_message.size() + 1, 0);
-            }
-        }
-        else
-        {
-            // Если передан неправильный формат команды
-            string error_message = "Incorrect command format. Please use AUTH|username|password\n";
-            send(client_socket, error_message.c_str(), error_message.size() + 1, 0);
-        }
-    }
-
-    // Обычный цикл работы с сообщениями
-    while (true)
-    {
-        memset(buffer, 0, sizeof(buffer));
-        int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-        if (bytes_received <= 0)
-        {
-            cout << "Client disconnected." << endl;
-            closesocket(client_socket);
-            clients.erase(remove(clients.begin(), clients.end(), client_socket), clients.end());
-            num_clients--;
-            cout << "Current number of clients: " << num_clients << endl;
-            break;
-        }
-
-        // Получаем сообщение
-        string clean_message(buffer, bytes_received);
-
-        // Извлекаем ID пользователя
-        int user_id = users_and_ids[client_socket].second;
-        string username = users_and_ids[client_socket].first;
-
-        // Формируем подпись с ID и именем пользователя
-        string signed_message = "[" + to_string(user_id) + "] " + username + ": " + clean_message;
-
-        // Рассылаем подписанное сообщение другим пользователям
-        broadcast_message(signed_message, client_socket);
     }
 }
 
-int main()
-{
-    int MAX_CLIENTS;
-    cout << "Write max clients on server: ";
-    cin >> MAX_CLIENTS;
-    WSADATA wsaData;
-    WSAStartup(MAKEWORD(2, 2), &wsaData);
+// Обработчик клиента
+void handle_client(socket_t client_sock) {
+    char buffer[1024];
 
-    SOCKET server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (server_socket == INVALID_SOCKET)
-    {
-        cerr << "Failed to create socket." << endl;
+    cout << "Client connected: socket " << client_sock << endl;
+
+    // Аутентификация
+    bool authenticated = false;
+    string username;
+
+    while (!authenticated) {
+        memset(buffer, 0, sizeof(buffer));
+        int bytes = socket_recv(client_sock, buffer, sizeof(buffer) - 1);
+
+        if (bytes <= 0) {
+            cout << "Client disconnected during auth" << endl;
+            socket_close(client_sock);
+            return;
+        }
+
+        buffer[bytes] = '\0';
+        string packet(buffer);
+        size_t pos1 = packet.find('|');
+
+        if (pos1 != string::npos && packet.substr(0, pos1) == "AUTH") {
+            string rest = packet.substr(pos1 + 1);
+            size_t pos2 = rest.find('|');
+
+            if (pos2 != string::npos) {
+                username = rest.substr(0, pos2);
+                // Игнорируем пароль
+
+                // Регистрируем пользователя
+                int client_id = next_client_id++;
+                client_info[client_sock] = make_pair(username, client_id);
+                authenticated = true;
+
+                string welcome = "OK|Welcome " + username + "! Your ID: " + to_string(client_id);
+                socket_send(client_sock, welcome.c_str(), welcome.length());
+
+                cout << "User '" << username << "' (ID: " << client_id << ") authenticated" << endl;
+
+                // Уведомляем других
+                string join_msg = "[SERVER] " + username + " joined the chat";
+                broadcast_message(join_msg, client_sock);
+            }
+        }
+
+        if (!authenticated) {
+            string error = "ERROR|Use: AUTH|username|password";
+            socket_send(client_sock, error.c_str(), error.length());
+        }
+    }
+
+    // Основной цикл
+    while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        int bytes = socket_recv(client_sock, buffer, sizeof(buffer) - 1);
+
+        if (bytes <= 0) {
+            break;
+        }
+
+        buffer[bytes] = '\0';
+        string message(buffer);
+
+        if (!message.empty()) {
+            auto& info = client_info[client_sock];
+            string full_msg = "[" + to_string(info.second) + "] " + info.first + ": " + message;
+
+            cout << "Message: " << full_msg << endl;
+            broadcast_message(full_msg, client_sock);
+        }
+    }
+
+    // Клиент отключился
+    auto it = find(clients.begin(), clients.end(), client_sock);
+    if (it != clients.end()) {
+        clients.erase(it);
+        client_count--;
+    }
+
+    if (client_info.find(client_sock) != client_info.end()) {
+        string leave_msg = "[SERVER] " + client_info[client_sock].first + " left the chat";
+        broadcast_message(leave_msg, INVALID_SOCKET);
+        client_info.erase(client_sock);
+    }
+
+    socket_close(client_sock);
+    cout << "Client disconnected. Total: " << client_count << endl;
+}
+
+int main() {
+    cout << "=== Cross-platform Chat Server ===" << endl;
+
+    if (!network_init()) {
         return 1;
     }
 
-    sockaddr_in server_addr;
+    int max_clients;
+    cout << "Enter max clients: ";
+    cin >> max_clients;
+    cin.ignore();
+
+    // Создаем сокет
+    socket_t server_sock = socket_create();
+    if (server_sock == INVALID_SOCKET) {
+        cerr << "Socket creation failed: " << socket_errno << endl;
+        network_cleanup();
+        return 1;
+    }
+
+    // Настройка адреса
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(PORT);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(server_socket, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR)
-    {
-        cerr << "Failed to bind socket." << endl;
-        closesocket(server_socket);
+    // Разрешаем повторное использование порта
+    int opt = 1;
+    if (socket_setopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == SOCKET_ERROR) {
+        cerr << "Set socket option failed: " << socket_errno << endl;
+        socket_close(server_sock);
+        network_cleanup();
         return 1;
     }
 
-    if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR)
-    {
-        cerr << "Failed to listen on socket." << endl;
-        closesocket(server_socket);
+    // Привязываем сокет
+    if (socket_bind(server_sock, reinterpret_cast<struct sockaddr*>(&server_addr), sizeof(server_addr)) == SOCKET_ERROR) {
+        cerr << "Bind failed: " << socket_errno << endl;
+        cerr << "Make sure:" << endl;
+        cerr << "1. Port " << PORT << " is available" << endl;
+        cerr << "2. No other server is running" << endl;
+        cerr << "3. You have permission to bind to this port" << endl;
+        socket_close(server_sock);
+        network_cleanup();
         return 1;
     }
 
-    cout << "Server is listening on port " << PORT << "." << endl;
+    // Начинаем прослушивание
+    if (socket_listen(server_sock, 10) == SOCKET_ERROR) {
+        cerr << "Listen failed: " << socket_errno << endl;
+        socket_close(server_sock);
+        network_cleanup();
+        return 1;
+    }
 
-    while (true)
-    {
-        SOCKET client_socket = accept(server_socket, NULL, NULL);
-        if (client_socket == INVALID_SOCKET)
-        {
-            cerr << "Failed to accept connection." << endl;
+    // Выводим информацию о сервере
+    cout << "\n=== Server Information ===" << endl;
+    cout << "Platform: ";
+#ifdef _WIN32
+    cout << "Windows" << endl;
+#else
+    cout << "Linux/Android" << endl;
+#endif
+    cout << "Port: " << PORT << endl;
+    cout << "Max clients: " << max_clients << endl;
+    cout << "Server IP: 0.0.0.0 (all interfaces)" << endl;
+    cout << "Localhost: 127.0.0.1:" << PORT << endl;
+    cout << "Waiting for connections..." << endl;
+    cout << "Press Ctrl+C to stop server" << endl;
+    cout << "==========================\n" << endl;
+
+    while (true) {
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+
+        // Принимаем соединение
+        socket_t client_sock = socket_accept(server_sock, reinterpret_cast<struct sockaddr*>(&client_addr), &client_len);
+
+        if (client_sock == INVALID_SOCKET) {
+            cerr << "Accept failed: " << socket_errno << endl;
             continue;
         }
 
-        // Проверка на максимальное количество клиентов
-        if (num_clients >= MAX_CLIENTS)
-        {
-            cerr << "The connection attempt was rejected due to exceeding the maximum number of" << endl;
-
-            // Отправляем сообщение клиенту о превышении лимита
-            const char* error_message = "Connection refused: maximum number of clients reached.\n";
-            send(client_socket, error_message, strlen(error_message), 0);
-
-            closesocket(client_socket); // Закрываем соединение, если лимит достигнут
+        // Проверяем лимит клиентов
+        if (client_count >= max_clients) {
+            string error = "ERROR|Server is full. Max: " + to_string(max_clients);
+            socket_send(client_sock, error.c_str(), error.length());
+            socket_close(client_sock);
+            cout << "Connection rejected: server full (" << max_clients << " clients)" << endl;
             continue;
         }
 
-        clients.push_back(client_socket);
-        num_clients++;
-        cout << "New client connected. Current number of clients: " << num_clients << endl;
+        // Добавляем клиента
+        clients.push_back(client_sock);
+        client_count++;
 
-        thread client_thread(handle_client, client_socket);
+        // Выводим информацию о подключении
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+        cout << "New connection from " << client_ip << ":" << ntohs(client_addr.sin_port) << endl;
+        cout << "Total clients: " << client_count << "/" << max_clients << endl;
+
+        // Запускаем обработчик в отдельном потоке
+        thread client_thread(handle_client, client_sock);
         client_thread.detach();
     }
 
-    closesocket(server_socket);
-    WSACleanup();
+    // Закрываем серверный сокет (этот код никогда не выполнится в бесконечном цикле)
+    socket_close(server_sock);
+    network_cleanup();
+
     return 0;
 }

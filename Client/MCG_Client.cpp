@@ -1,106 +1,250 @@
 ﻿#include <iostream>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <cstring>
 #include <thread>
 #include <string>
+#include <atomic>
 
+// Платформо-зависимые заголовки
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
 #pragma comment(lib, "Ws2_32.lib")
-
-const int PORT = 8080;
+#define SOCKET_TYPE SOCKET
+#define INVALID_SOCKET_VAL INVALID_SOCKET
+#define CLOSE_SOCKET closesocket
+#define GET_LAST_ERROR WSAGetLastError()
+#define SLEEP(ms) Sleep(ms)
+#else
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#define SOCKET_TYPE int
+#define INVALID_SOCKET_VAL -1
+#define CLOSE_SOCKET close
+#define GET_LAST_ERROR errno
+#define SLEEP(ms) usleep(ms * 1000)
+#endif
 
 using namespace std;
 
-// Функция приёма сообщений от сервера
-void receive_messages(SOCKET client_socket)
-{
+const int PORT = 8080;
+atomic<bool> running(true);
+
+// Инициализация сети
+bool network_init() {
+#ifdef _WIN32
+    WSADATA wsaData;
+    return WSAStartup(MAKEWORD(2, 2), &wsaData) == 0;
+#else
+    return true;
+#endif
+}
+
+// Очистка сети
+void network_cleanup() {
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
+// Функция приёма сообщений
+void receive_messages(SOCKET_TYPE client_socket) {
     char buffer[1024];
-    while (true)
-    {
+
+    while (running) {
         memset(buffer, 0, sizeof(buffer));
-        int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-        if (bytes_received <= 0)
-        {
-            break; // Сервер завершил работу или произошел разрыв
+
+#ifdef _WIN32
+        int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+#else
+        ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+#endif
+
+        if (bytes_received <= 0) {
+            if (running) {
+                cout << "\n[INFO] Disconnected from server." << endl;
+            }
+            break;
         }
-        else
-        {
-            string message(buffer, bytes_received);
-            cout << message << endl;
-        }
+
+        buffer[bytes_received] = '\0';
+        cout << buffer << endl;
+        cout << "> " << flush;
     }
 }
 
-bool is_connected(SOCKET sock)
-{
+// Проверка подключения
+bool is_connected(SOCKET_TYPE sock) {
+    if (sock == INVALID_SOCKET_VAL) return false;
+
+#ifdef _WIN32
     fd_set readfds;
-    timeval timeout = { 0 };
+    timeval timeout = { 0, 1000 };
     FD_ZERO(&readfds);
     FD_SET(sock, &readfds);
-    select((int)(sock + 1), &readfds, nullptr, nullptr, &timeout);
-    return !FD_ISSET(sock, &readfds);
+
+    int result = select(0, &readfds, nullptr, nullptr, &timeout);
+    return result != SOCKET_ERROR;
+#else
+    fd_set readfds;
+    timeval timeout = { 0, 1000 };
+    FD_ZERO(&readfds);
+    FD_SET(sock, &readfds);
+
+    int result = select(sock + 1, &readfds, nullptr, nullptr, &timeout);
+    return result >= 0;
+#endif
 }
 
-int main()
-{
-    WSADATA wsaData;
-    WSAStartup(MAKEWORD(2, 2), &wsaData);
+int main() {
+    if (!network_init()) {
+        cerr << "Network initialization failed!" << endl;
+        return 1;
+    }
 
-    SOCKET client_socket = INVALID_SOCKET;
-    bool running = true;
+    cout << "=== Cross-platform Chat Client ===" << endl;
+#ifdef _WIN32
+    cout << "Platform: Windows" << endl;
+#else
+    cout << "Platform: Linux/Android" << endl;
+#endif
+    cout << "Server port: " << PORT << endl;
+    cout << "Commands: disconnect, exit" << endl;
+    cout << "==================================" << endl;
 
-    while (running)
-    {
+    while (running) {
         string ip_address;
-        cout << "Enter server IP address: ";
+        cout << "\nEnter server IP (127.0.0.1 for localhost): ";
         getline(cin, ip_address);
 
-        // Создание сокета
-        client_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (client_socket == INVALID_SOCKET)
-        {
-            cerr << "Failed to create socket." << endl;
+        if (ip_address == "exit") {
+            running = false;
+            break;
+        }
+
+        if (ip_address.empty()) {
+            ip_address = "127.0.0.1";
+        }
+
+        SOCKET_TYPE client_socket = socket(AF_INET, SOCK_STREAM, 0);
+        if (client_socket == INVALID_SOCKET_VAL) {
+            cerr << "Socket creation failed: " << GET_LAST_ERROR << endl;
             continue;
         }
 
         sockaddr_in server_addr;
+        memset(&server_addr, 0, sizeof(server_addr));
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(PORT);
-        inet_pton(AF_INET, ip_address.c_str(), &server_addr.sin_addr);
 
-        // Подключение к серверу
-        if (connect(client_socket, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR)
-        {
-            cerr << "Failed to connect to server." << endl;
-            closesocket(client_socket);
+        if (inet_pton(AF_INET, ip_address.c_str(), &server_addr.sin_addr) <= 0) {
+            cerr << "Invalid IP address." << endl;
+            CLOSE_SOCKET(client_socket);
             continue;
         }
 
-        cout << "Connected to the server." << endl;
+        cout << "Connecting to " << ip_address << "..." << endl;
 
-        // Запуск потока для приёма сообщений
+        if (connect(client_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            cerr << "Connection failed: " << GET_LAST_ERROR << endl;
+            CLOSE_SOCKET(client_socket);
+            continue;
+        }
+
+        cout << "Connected! Authentication required." << endl;
+        cout << "Format: AUTH|username|password" << endl;
+
+        // Аутентификация
+        bool authenticated = false;
+        while (!authenticated && running) {
+            string auth_msg;
+            cout << "> ";
+            getline(cin, auth_msg);
+
+            if (auth_msg == "disconnect" || auth_msg == "exit") {
+                if (auth_msg == "exit") running = false;
+                break;
+            }
+
+            if (send(client_socket, auth_msg.c_str(), auth_msg.size(), 0) < 0) {
+                cerr << "Send failed." << endl;
+                break;
+            }
+
+            char response[256];
+            memset(response, 0, sizeof(response));
+
+#ifdef _WIN32
+            int bytes = recv(client_socket, response, sizeof(response) - 1, 0);
+#else
+            ssize_t bytes = recv(client_socket, response, sizeof(response) - 1, 0);
+#endif
+
+            if (bytes > 0) {
+                response[bytes] = '\0';
+                string resp_str(response);
+                if (resp_str.find("OK") == 0) {
+                    cout << "Authentication successful!" << endl;
+                    authenticated = true;
+                }
+                else {
+                    cout << "Error: " << resp_str << endl;
+                }
+            }
+            else {
+                cerr << "Server disconnected." << endl;
+                break;
+            }
+        }
+
+        if (!authenticated) {
+            CLOSE_SOCKET(client_socket);
+            continue;
+        }
+
+        cout << "\n=== Chat Started ===" << endl;
+        cout << "Type your messages:" << endl;
+
         thread receive_thread(receive_messages, client_socket);
 
         string message;
-        while (is_connected(client_socket))
-        {
+        while (running && is_connected(client_socket)) {
+            cout << "> ";
             getline(cin, message);
-            if (message == "disconnect")
-            {
-                cout << "Disconnecting from server." << endl;
+
+            if (message == "disconnect") {
+                cout << "Disconnecting..." << endl;
                 break;
             }
-            send(client_socket, message.c_str(), message.size() + 1, 0);
+
+            if (message == "exit") {
+                running = false;
+                break;
+            }
+
+            if (send(client_socket, message.c_str(), message.size(), 0) < 0) {
+                cerr << "Send failed." << endl;
+                break;
+            }
         }
 
-        // Прерывание приема сообщений
-        receive_thread.detach(); // Отделяем поток, иначе join может заблокироваться
+        running = false;
+        if (receive_thread.joinable()) {
+            receive_thread.join();
+        }
+        running = true;
 
-        closesocket(client_socket);
-        client_socket = INVALID_SOCKET;
+        CLOSE_SOCKET(client_socket);
 
-        cout << "Disconnected from server. Enter new IP address or exit.\n";
+        if (message != "exit") {
+            cout << "Disconnected. Connect to another server?" << endl;
+        }
     }
 
-    WSACleanup();
+    network_cleanup();
+    cout << "Client terminated." << endl;
     return 0;
 }
