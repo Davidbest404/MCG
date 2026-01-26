@@ -54,6 +54,7 @@ vector<socket_t> clients;
 atomic<int> client_count(0);
 map<socket_t, pair<string, int>> client_info;
 atomic<int> next_client_id(1);
+string Password = "null";
 
 // Инициализация сети
 bool network_init() {
@@ -232,6 +233,8 @@ int main() {
     int max_clients;
     cout << "Enter max clients: ";
     cin >> max_clients;
+    cout << "Enter configuration password: ";
+    cin >> Password;
     cin.ignore();
 
     // Создаем сокет
