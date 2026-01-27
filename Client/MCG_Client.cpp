@@ -112,7 +112,8 @@ int main() {
     cout << "Platform: Linux/Android" << endl;
 #endif
     cout << "Server port: " << PORT << endl;
-    cout << "Commands: disconnect, exit" << endl;
+    cout << "Commands: disconnect, exit, /help, /list" << endl;
+    cout << "Game commands: /move, /attack, /defend, /skip, /status, /map, /ready, /unready" << endl;
     cout << "==================================" << endl;
 
     while (running) {
@@ -154,8 +155,22 @@ int main() {
             continue;
         }
 
-        cout << "Connected! Authentication required." << endl;
-        cout << "Format: AUTH|username|password" << endl;
+        cout << "Connected! Waiting for server welcome..." << endl << endl;
+
+        // Ждем приветственное сообщение от сервера
+        char welcome_buffer[512];
+        memset(welcome_buffer, 0, sizeof(welcome_buffer));
+
+#ifdef _WIN32
+        int welcome_bytes = recv(client_socket, welcome_buffer, sizeof(welcome_buffer) - 1, 0);
+#else
+        ssize_t welcome_bytes = recv(client_socket, welcome_buffer, sizeof(welcome_buffer) - 1, 0);
+#endif
+
+        if (welcome_bytes > 0) {
+            welcome_buffer[welcome_bytes] = '\0';
+            cout << welcome_buffer << endl;  // Выводим приветствие от сервера
+        }
 
         // Аутентификация
         bool authenticated = false;
@@ -223,6 +238,25 @@ int main() {
             if (message == "exit") {
                 running = false;
                 break;
+            }
+
+
+            // Локальные команды клиента
+            if (message == "/help") {
+                cout << "\n=== Client Commands ===\n";
+                cout << "/help - Show this message\n";
+                cout << "/list - List all connected clients\n";
+                cout << "\n=== Game Commands ===\n";
+                cout << "/move [direction] - Move (north, south, east, west)\n";
+                cout << "/attack [target_id] - Attack another player\n";
+                cout << "/defend - Defend yourself\n";
+                cout << "/skip - Skip your turn\n";
+                cout << "/status - Check your status\n";
+                cout << "/map - Show game map\n";
+                cout << "/ready - Mark yourself as ready\n";
+                cout << "/unready - Mark yourself as not ready\n";
+                cout << "=======================\n";
+                continue;
             }
 
             if (send(client_socket, message.c_str(), message.size(), 0) < 0) {
