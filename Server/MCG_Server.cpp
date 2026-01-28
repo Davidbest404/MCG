@@ -565,7 +565,7 @@ void process_game_command(socket_t client_sock, const string& command, int playe
 
             lock.unlock();
             broadcast_message(broadcast_msg, INVALID_SOCKET);
-
+            cout << "=== GAME STARTED ===\n";
         }
         else if (cmd == "pause_game") {
             game_state.is_active = false;

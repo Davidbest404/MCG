@@ -1,0 +1,3 @@
+﻿  ChatWindow.cpp
+C:\Users\Самвел\Documents\GitHub\MCG\Client\ChatWindow\ChatWindow.cpp(30,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
+  ChatWindow.vcxproj -> C:\Users\Самвел\Documents\GitHub\MCG\Client\ChatWindow\x64\Debug\ChatWindow.exe
