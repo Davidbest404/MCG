@@ -449,7 +449,11 @@ void process_game_command(socket_t client_sock, const string& command, int playe
         // Простая логика атаки
         int damage = 10 + (attacker.level * 2);
         target.hp -= damage;
-        if (target.hp < 0) target.hp = 0;
+        if (target.hp < 0) {
+            target.hp = 100;
+            target.x = 0;
+            target.y = 0;
+        }
 
         attacker.last_action = ActionType::ATTACK;
         attacker.is_ready = true;

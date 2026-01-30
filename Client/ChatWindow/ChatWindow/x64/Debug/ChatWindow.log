@@ -1,4 +1,2 @@
 ﻿  ChatWindow.cpp
 C:\Users\David\Documents\GitHub\MCG\Client\ChatWindow\ChatWindow.cpp(30,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
-  LINK : не найден или не выполнена сборка C:\Users\David\Documents\GitHub\MCG\Client\ChatWindow\x64\Debug\ChatWindow.exe при последней инкрементной компоновке; выполняется полная компоновка
-  ChatWindow.vcxproj -> C:\Users\David\Documents\GitHub\MCG\Client\ChatWindow\x64\Debug\ChatWindow.exe
