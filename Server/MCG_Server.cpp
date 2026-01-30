@@ -1,4 +1,5 @@
 ﻿#include <iostream>
+#include <random>
 #include <fstream>
 #include <cstring>
 #include <thread>
@@ -17,7 +18,10 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
-
+// Для большего количества символов и цветов
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
 // Windows-specific
 #define SHUT_RDWR SD_BOTH
 #ifndef SOMAXCONN
@@ -52,6 +56,51 @@ typedef int socket_t;
 using namespace std;
 
 const int PORT = 8080;
+
+class ConsoleHelper {
+public:
+    // Инициализация консоли для поддержки Unicode и русского
+    static void InitConsole() {
+        #ifdef _WIN32
+        // Устанавливаем кодовую страницу UTF-8
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+
+        // Настраиваем буфер для поддержки Unicode
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD dwMode = 0;
+        GetConsoleMode(hOut, &dwMode);
+        dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING; // Для ANSI escape-кодов
+        SetConsoleMode(hOut, dwMode);
+
+        // Для старых версий Windows (до Win10)
+        // используем SetConsoleFont
+        SetConsoleFont();
+        #endif
+    }
+
+    // Установка шрифта, поддерживающего Unicode
+    static void SetConsoleFont() {
+#ifdef _WIN32
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        CONSOLE_FONT_INFOEX fontInfo;
+        fontInfo.cbSize = sizeof(fontInfo);
+        GetCurrentConsoleFontEx(hConsole, FALSE, &fontInfo);
+
+        // Шрифт Consolas хорошо поддерживает Unicode
+        wcscpy_s(fontInfo.FaceName, L"Consolas");
+        SetCurrentConsoleFontEx(hConsole, FALSE, &fontInfo);
+#endif
+    }
+
+    // Установка цвета текста
+    static void SetColor(int textColor, int bgColor = 0) {
+#ifdef _WIN32
+        HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hStdOut, (WORD)((bgColor << 4) | textColor));
+#endif
+    }
+};
 
 // Типы действий
 enum class ActionType {
@@ -122,6 +171,10 @@ void load_game_state(const string& filename);
 void process_admin_command_save(const string& filename);
 void process_admin_command_load(const string& filename);
 void auto_save_thread();
+
+int Random(int max, int min) {
+    return rand() % (max - min + 1) + min;
+}
 
 // Инициализация сети
 bool network_init() {
@@ -356,14 +409,14 @@ void process_game_command(socket_t client_sock, const string& command, int playe
         }
 
         player.last_action = ActionType::MOVE;
-        player.is_ready = true;
+        //player.is_ready = true;
 
-        string response = "You moved " + direction + ". Position: (" +
+        string response = "You will move to " + direction + ". Position: (" +
             to_string(player.x) + "," + to_string(player.y) + ")\n";
         socket_send(client_sock, response.c_str(), response.length());
 
         // Сохраняем данные для отправки
-        string broadcast_msg = player.name + " moved " + direction + ".";
+        string broadcast_msg = player.name + " will move to " + direction + ".";
 
         // Освобождаем мьютекс перед отправкой сообщения
         lock.unlock();
@@ -412,8 +465,8 @@ void process_game_command(socket_t client_sock, const string& command, int playe
             level_up = true;
         }
 
-        string response = "You attacked player " + target.name + " for " +
-            to_string(damage) + " damage!\n";
+        string response = "You will attacke " + target.name + " for " +
+            to_string(Random(damage, damage/2)) + " damage!\n";
         if (target.hp <= 0) {
             response += target.name + " has been defeated!\n";
             // Награда за победу
@@ -446,7 +499,7 @@ void process_game_command(socket_t client_sock, const string& command, int playe
 
         auto& player = game_state.players[player_id];
         player.last_action = ActionType::DEFEND;
-        player.is_ready = true;
+        //player.is_ready = true;
         socket_send(client_sock, "You are defending this turn.\n", 30);
 
     }
@@ -565,7 +618,9 @@ void process_game_command(socket_t client_sock, const string& command, int playe
 
             lock.unlock();
             broadcast_message(broadcast_msg, INVALID_SOCKET);
+            ConsoleHelper::SetColor(10);
             cout << "=== GAME STARTED ===\n";
+            ConsoleHelper::SetColor(8);
         }
         else if (cmd == "pause_game") {
             game_state.is_active = false;
@@ -650,7 +705,9 @@ void save_game_state(const string& filename) {
     }
 
     file.close();
+    ConsoleHelper::SetColor(6);
     cout << "Game state saved to " << filename << endl;
+    ConsoleHelper::SetColor(8);
 }
 
 // Загрузка состояния игры из файла
@@ -695,9 +752,11 @@ void load_game_state(const string& filename) {
 
         game_state.players[new_id] = player;
 
+        ConsoleHelper::SetColor(4);
         cout << "Loaded player: " << player.name
             << " (HP: " << player.hp << "/" << player.max_hp
             << ", Level: " << player.level << ")" << endl;
+        ConsoleHelper::SetColor(8);
     }
 
     // Загружаем лог ходов
@@ -718,8 +777,10 @@ void load_game_state(const string& filename) {
     }
 
     file.close();
+    ConsoleHelper::SetColor(6);
     cout << "Game state loaded from " << filename << ". "
         << player_count << " players restored." << endl;
+    ConsoleHelper::SetColor(8);
 }
 
 // Команда для сохранения игры
@@ -743,7 +804,9 @@ void auto_save_thread() {
 
         if (game_state.is_active) {
             save_game_state("autosave.rpg");
+            ConsoleHelper::SetColor(10);
             cout << "Auto-save completed" << endl;
+            ConsoleHelper::SetColor(8);
         }
     }
 }

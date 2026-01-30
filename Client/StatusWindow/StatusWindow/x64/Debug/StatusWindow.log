@@ -1,3 +1,4 @@
 ﻿  StatusWindow.cpp
-C:\Users\Самвел\Documents\GitHub\MCG\Client\StatusWindow\StatusWindow.cpp(39,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
-  StatusWindow.vcxproj -> C:\Users\Самвел\Documents\GitHub\MCG\Client\StatusWindow\x64\Debug\StatusWindow.exe
+C:\Users\David\Documents\GitHub\MCG\Client\StatusWindow\StatusWindow.cpp(39,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
+  LINK : не найден или не выполнена сборка C:\Users\David\Documents\GitHub\MCG\Client\StatusWindow\x64\Debug\StatusWindow.exe при последней инкрементной компоновке; выполняется полная компоновка
+  StatusWindow.vcxproj -> C:\Users\David\Documents\GitHub\MCG\Client\StatusWindow\x64\Debug\StatusWindow.exe

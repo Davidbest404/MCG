@@ -18,6 +18,10 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+//Для большего количества символов и цветов
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
 #pragma comment(lib, "Ws2_32.lib")
 #define SOCKET_TYPE SOCKET
 #define INVALID_SOCKET_VAL INVALID_SOCKET
@@ -45,6 +49,45 @@ const int LOCAL_PORT = 9090;
 atomic<bool> running(true);
 atomic<bool> connected_to_game(false);
 atomic<bool> local_server_running(false);
+
+class ConsoleHelper {
+public:
+    // Инициализация консоли для поддержки Unicode и русского
+    static void InitConsole() {
+        // Устанавливаем кодовую страницу UTF-8
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+
+        // Настраиваем буфер для поддержки Unicode
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD dwMode = 0;
+        GetConsoleMode(hOut, &dwMode);
+        dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING; // Для ANSI escape-кодов
+        SetConsoleMode(hOut, dwMode);
+
+        // Для старых версий Windows (до Win10)
+        // используем SetConsoleFont
+        SetConsoleFont();
+    }
+
+    // Установка шрифта, поддерживающего Unicode
+    static void SetConsoleFont() {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        CONSOLE_FONT_INFOEX fontInfo;
+        fontInfo.cbSize = sizeof(fontInfo);
+        GetCurrentConsoleFontEx(hConsole, FALSE, &fontInfo);
+
+        // Шрифт Consolas хорошо поддерживает Unicode
+        wcscpy_s(fontInfo.FaceName, L"Consolas");
+        SetCurrentConsoleFontEx(hConsole, FALSE, &fontInfo);
+    }
+
+    // Установка цвета текста
+    static void SetColor(int textColor, int bgColor = 0) {
+        HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hStdOut, (WORD)((bgColor << 4) | textColor));
+    }
+};
 
 // Типы локальных клиентов
 enum class ClientType {
@@ -142,8 +185,8 @@ MessageType get_message_type(const string& message) {
         return MessageType::MAP_UPDATE;
     }
     else if (message.find("=== Your Status ===") != string::npos ||
-        message.find("HP: ") != string::npos ||
-        message.find("Level: ") != string::npos) {
+        message.find("Name: ") != string::npos ||
+        message.find("HP: ") != string::npos) {
         return MessageType::STATUS_UPDATE;
     }
     else if (message.find("[SERVER]") != string::npos ||
@@ -214,7 +257,9 @@ void receive_from_game_server() {
         }
         else if (bytes_received == 0) {
             // Соединение закрыто
-            send_to_local_clients("[SYSTEM] Disconnected from game server", ClientType::CHAT_WINDOW);
+            ConsoleHelper::SetColor(6); // Желтый
+            cout << "[SYSTEM] Disconnected from game server\n";
+            ConsoleHelper::SetColor(7); // Белый
             connected_to_game = false;
             break;
         }
@@ -228,7 +273,9 @@ void receive_from_game_server() {
 bool connect_to_game_server(const string& ip_address) {
     game_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (game_socket == INVALID_SOCKET_VAL) {
-        send_to_local_clients("[ERROR] Failed to create socket", ClientType::CHAT_WINDOW);
+        ConsoleHelper::SetColor(6); // Желтый
+        cout << "[ERROR] Failed to create socket\n";
+        ConsoleHelper::SetColor(7); // Белый
         return false;
     }
 
@@ -246,17 +293,23 @@ bool connect_to_game_server(const string& ip_address) {
             server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         }
         else {
-            send_to_local_clients("[ERROR] Invalid IP address: " + ip_address, ClientType::CHAT_WINDOW);
+            ConsoleHelper::SetColor(4); // Красный
+            cout << "[ERROR] Invalid IP address: " + ip_address;
+            ConsoleHelper::SetColor(7); // Белый
             CLOSE_SOCKET(game_socket);
             game_socket = INVALID_SOCKET_VAL;
             return false;
         }
     }
 
-    send_to_local_clients("[SYSTEM] Connecting to game server at " + ip_address + "...", ClientType::CHAT_WINDOW);
+    ConsoleHelper::SetColor(10); // Зеленый
+    cout << "[SYSTEM] Connecting to game server at " + ip_address + "...\n";
+    ConsoleHelper::SetColor(7); // Белый
 
     if (connect(game_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        send_to_local_clients("[ERROR] Connection failed. Make sure server is running.", ClientType::CHAT_WINDOW);
+        ConsoleHelper::SetColor(4); // Красный
+        cout << "[ERROR] Connection failed. Make sure server is running.\n";
+        ConsoleHelper::SetColor(7); // Белый
         CLOSE_SOCKET(game_socket);
         game_socket = INVALID_SOCKET_VAL;
         return false;
@@ -278,7 +331,9 @@ bool connect_to_game_server(const string& ip_address) {
     }
 
     connected_to_game = true;
-    send_to_local_clients("[SYSTEM] Connected to game server!", ClientType::CHAT_WINDOW);
+    ConsoleHelper::SetColor(1); // Серый
+    send_to_local_clients("[SYSTEM] Connected to game server!\n", ClientType::CHAT_WINDOW);
+    ConsoleHelper::SetColor(7); // Белый
 
     return true;
 }
@@ -411,7 +466,9 @@ void cleanup_local_clients() {
 void command_input_loop() {
     string input;
 
+    ConsoleHelper::SetColor(6); // Желтый
     cout << "Type 'help' for commands or 'windows' for window setup instructions.\n";
+    ConsoleHelper::SetColor(7); // Белый
 
     while (running) {
         cout << "MCG Client> ";
@@ -425,7 +482,9 @@ void command_input_loop() {
         }
         else if (input == "connect") {
             if (connected_to_game) {
+                ConsoleHelper::SetColor(6); // Желтый
                 cout << "[ERROR] Already connected to game server. Disconnect first.\n";
+                ConsoleHelper::SetColor(7); // Белый
                 continue;
             }
 

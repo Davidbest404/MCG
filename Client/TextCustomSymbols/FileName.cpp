@@ -5,7 +5,7 @@
 
     // ANSI цветные коды (работают после инициализации)
     static const char* Reset = "\033[0m";
-    static const char* Red = "\033[31m";
+    static const char* Red = "\033[39m";
     static const char* Green = "\033[32m";
     static const char* Yellow = "\033[33m";
     static const char* Blue = "\033[34m";
