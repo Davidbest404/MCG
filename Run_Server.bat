@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title MCG Client Launcher
+title MCG Server Launcher
 mode con: cols=60 lines=25
 color 0A
 
