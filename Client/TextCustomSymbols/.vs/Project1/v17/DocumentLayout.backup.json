@@ -1,9 +1,9 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\",
+  "WorkspaceRootPath": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{5BB1416C-3BFE-49C1-8E1D-82A3429BED12}|Project1.vcxproj|C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\FileName.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "AbsoluteMoniker": "D:0:0:{5BB1416C-3BFE-49C1-8E1D-82A3429BED12}|Project1.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\FileName.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{5BB1416C-3BFE-49C1-8E1D-82A3429BED12}|Project1.vcxproj|solutionrelative:FileName.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
@@ -20,13 +20,13 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "FileName.cpp",
-              "DocumentMoniker": "C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\FileName.cpp",
+              "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\FileName.cpp",
               "RelativeDocumentMoniker": "FileName.cpp",
-              "ToolTip": "C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\FileName.cpp",
+              "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\TextCustomSymbols\\FileName.cpp",
               "RelativeToolTip": "FileName.cpp",
-              "ViewState": "AgIAAGEAAAAAAAAAAAAgwIIAAAAOAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAUAAAA3AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-01-28T18:16:48.276Z",
+              "WhenOpened": "2026-02-16T09:19:44.096Z",
               "EditorCaption": ""
             }
           ]
