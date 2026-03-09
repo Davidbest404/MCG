@@ -8,7 +8,7 @@ color 0A
 cls
 echo.
 echo    ╔══════════════════════════════════╗
-echo    ║      MCG CLIENT LAUNCHER        ║
+echo    ║       MCG CLIENT LAUNCHER        ║
 echo    ╚══════════════════════════════════╝
 echo.
 echo    ┌──────────────────────────────────┐
