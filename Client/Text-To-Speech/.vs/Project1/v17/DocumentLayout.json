@@ -1,9 +1,9 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\Exsperiment\\Project1\\",
+  "WorkspaceRootPath": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\Text-To-Speech\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{27335C3D-D2CA-48EF-9349-A2EE16ED211E}|Project1.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\Exsperiment\\Project1\\FileName.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "AbsoluteMoniker": "D:0:0:{27335C3D-D2CA-48EF-9349-A2EE16ED211E}|Project1.vcxproj|C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\Text-To-Speech\\FileName.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{27335C3D-D2CA-48EF-9349-A2EE16ED211E}|Project1.vcxproj|solutionrelative:FileName.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
@@ -20,11 +20,11 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "FileName.cpp",
-              "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\Exsperiment\\Project1\\FileName.cpp",
+              "DocumentMoniker": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\Text-To-Speech\\FileName.cpp",
               "RelativeDocumentMoniker": "FileName.cpp",
-              "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\Exsperiment\\Project1\\FileName.cpp",
+              "ToolTip": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\Text-To-Speech\\FileName.cpp",
               "RelativeToolTip": "FileName.cpp",
-              "ViewState": "AgIAALwBAAAAAAAAAAAYwN4BAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAMMDAAAAAAAAAAAswOUDAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-02-07T18:04:19.047Z",
               "EditorCaption": ""
