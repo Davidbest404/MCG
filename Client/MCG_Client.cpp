@@ -50,10 +50,16 @@ atomic<bool> running(true);
 atomic<bool> connected_to_game(false);
 atomic<bool> local_server_running(false);
 
+// Глобальные счетчики открытых окон
+atomic<int> chat_windows_count(0);
+atomic<int> map_windows_count(0);
+atomic<int> status_windows_count(0);
+
 class ConsoleHelper {
 public:
     // Инициализация консоли для поддержки Unicode и русского
     static void InitConsole() {
+#ifdef _WIN32
         // Устанавливаем кодовую страницу UTF-8
         SetConsoleOutputCP(CP_UTF8);
         SetConsoleCP(CP_UTF8);
@@ -68,10 +74,12 @@ public:
         // Для старых версий Windows (до Win10)
         // используем SetConsoleFont
         SetConsoleFont();
+#endif
     }
 
     // Установка шрифта, поддерживающего Unicode
     static void SetConsoleFont() {
+#ifdef _WIN32
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         CONSOLE_FONT_INFOEX fontInfo;
         fontInfo.cbSize = sizeof(fontInfo);
@@ -80,12 +88,27 @@ public:
         // Шрифт Consolas хорошо поддерживает Unicode
         wcscpy_s(fontInfo.FaceName, L"Consolas");
         SetCurrentConsoleFontEx(hConsole, FALSE, &fontInfo);
+#endif
     }
 
     // Установка цвета текста
     static void SetColor(int textColor, int bgColor = 0) {
+#ifdef _WIN32
         HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
         SetConsoleTextAttribute(hStdOut, (WORD)((bgColor << 4) | textColor));
+#else
+        // ANSI color codes для Linux/Mac
+        cout << "\033[" << (30 + textColor) << "m";
+#endif
+    }
+
+    // Сброс цвета
+    static void ResetColor() {
+#ifdef _WIN32
+        SetColor(7);
+#else
+        cout << "\033[0m";
+#endif
     }
 };
 
@@ -201,14 +224,58 @@ MessageType get_message_type(const string& message) {
     return MessageType::SYSTEM_MESSAGE;
 }
 
-// Отправка сообщения локальным клиентам
-void send_to_local_clients(const string& message, ClientType target_type = ClientType::UNKNOWN) {
-    lock_guard<mutex> lock(local_clients_mutex);
+// Функция для вывода в основное окно с цветом
+void print_to_main_console(const string& message, int color = 7, const string& prefix = "") {
+    ConsoleHelper::SetColor(color);
+    if (!prefix.empty()) {
+        cout << prefix;
+    }
+    cout << message;
+    ConsoleHelper::ResetColor();
+}
 
-    for (const auto& client : local_clients) {
-        if (target_type == ClientType::UNKNOWN || client.type == target_type) {
-            safe_send(client.socket, message + "\n");
+// Отправка сообщения локальным клиентам (с fallback в основное окно)
+void send_to_local_clients(const string& message, ClientType target_type = ClientType::UNKNOWN) {
+    bool sent = false;
+
+    {
+        lock_guard<mutex> lock(local_clients_mutex);
+
+        for (const auto& client : local_clients) {
+            if (target_type == ClientType::UNKNOWN || client.type == target_type) {
+                if (safe_send(client.socket, message + "\n")) {
+                    sent = true;
+                }
+            }
         }
+    }
+
+    // Если нет открытых окон нужного типа, выводим в основное окно
+    if (!sent) {
+        // Определяем цвет и префикс в зависимости от типа сообщения
+        int color = 7; // белый по умолчанию
+        string prefix = "";
+
+        if (target_type == ClientType::CHAT_WINDOW) {
+            color = 10; // зеленый для чата
+            prefix = "[CHAT] ";
+        }
+        else if (target_type == ClientType::MAP_WINDOW) {
+            color = 14; // желтый для карты
+            prefix = "[MAP]\n";
+        }
+        else if (target_type == ClientType::STATUS_WINDOW) {
+            color = 11; // голубой для статуса
+            prefix = "[STATUS]\n";
+        }
+
+        // Убираем префиксы из сообщения, если они там есть
+        string clean_message = message;
+        if (clean_message.find("[CHAT] ") == 0) clean_message = clean_message.substr(7);
+        else if (clean_message.find("[MAP]\n") == 0) clean_message = clean_message.substr(6);
+        else if (clean_message.find("[STATUS]\n") == 0) clean_message = clean_message.substr(9);
+
+        print_to_main_console(prefix + clean_message, color);
     }
 }
 
@@ -257,9 +324,7 @@ void receive_from_game_server() {
         }
         else if (bytes_received == 0) {
             // Соединение закрыто
-            ConsoleHelper::SetColor(6); // Желтый
-            cout << "[SYSTEM] Disconnected from game server\n";
-            ConsoleHelper::SetColor(7); // Белый
+            print_to_main_console("[SYSTEM] Disconnected from game server\n", 6);
             connected_to_game = false;
             break;
         }
@@ -273,9 +338,7 @@ void receive_from_game_server() {
 bool connect_to_game_server(const string& ip_address) {
     game_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (game_socket == INVALID_SOCKET_VAL) {
-        ConsoleHelper::SetColor(6); // Желтый
-        cout << "[ERROR] Failed to create socket\n";
-        ConsoleHelper::SetColor(7); // Белый
+        print_to_main_console("[ERROR] Failed to create socket\n", 6);
         return false;
     }
 
@@ -293,23 +356,17 @@ bool connect_to_game_server(const string& ip_address) {
             server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         }
         else {
-            ConsoleHelper::SetColor(4); // Красный
-            cout << "[ERROR] Invalid IP address: " + ip_address;
-            ConsoleHelper::SetColor(7); // Белый
+            print_to_main_console("[ERROR] Invalid IP address: " + ip_address + "\n", 4);
             CLOSE_SOCKET(game_socket);
             game_socket = INVALID_SOCKET_VAL;
             return false;
         }
     }
 
-    ConsoleHelper::SetColor(10); // Зеленый
-    cout << "[SYSTEM] Connecting to game server at " + ip_address + "...\n";
-    ConsoleHelper::SetColor(7); // Белый
+    print_to_main_console("[SYSTEM] Connecting to game server at " + ip_address + "...\n", 10);
 
     if (connect(game_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        ConsoleHelper::SetColor(4); // Красный
-        cout << "[ERROR] Connection failed. Make sure server is running.\n";
-        ConsoleHelper::SetColor(7); // Белый
+        print_to_main_console("[ERROR] Connection failed. Make sure server is running.\n", 4);
         CLOSE_SOCKET(game_socket);
         game_socket = INVALID_SOCKET_VAL;
         return false;
@@ -331,9 +388,7 @@ bool connect_to_game_server(const string& ip_address) {
     }
 
     connected_to_game = true;
-    ConsoleHelper::SetColor(1); // Серый
     send_to_local_clients("[SYSTEM] Connected to game server!\n", ClientType::CHAT_WINDOW);
-    ConsoleHelper::SetColor(7); // Белый
 
     return true;
 }
@@ -416,14 +471,17 @@ void local_server() {
         if (client_info.find("CHAT_WINDOW") != string::npos) {
             new_client.type = ClientType::CHAT_WINDOW;
             new_client.name = "Chat Window";
+            chat_windows_count++;
         }
         else if (client_info.find("MAP_WINDOW") != string::npos) {
             new_client.type = ClientType::MAP_WINDOW;
             new_client.name = "Map Window";
+            map_windows_count++;
         }
         else if (client_info.find("STATUS_WINDOW") != string::npos) {
             new_client.type = ClientType::STATUS_WINDOW;
             new_client.name = "Status Window";
+            status_windows_count++;
         }
         else {
             new_client.type = ClientType::UNKNOWN;
@@ -456,6 +514,9 @@ void cleanup_local_clients() {
 
     for (auto& client : local_clients) {
         if (client.socket != INVALID_SOCKET_VAL) {
+            if (client.type == ClientType::CHAT_WINDOW) chat_windows_count--;
+            else if (client.type == ClientType::MAP_WINDOW) map_windows_count--;
+            else if (client.type == ClientType::STATUS_WINDOW) status_windows_count--;
             CLOSE_SOCKET(client.socket);
         }
     }
@@ -466,9 +527,7 @@ void cleanup_local_clients() {
 void command_input_loop() {
     string input;
 
-    ConsoleHelper::SetColor(6); // Желтый
-    cout << "Type 'help' for commands or 'windows' for window setup instructions.\n";
-    ConsoleHelper::SetColor(7); // Белый
+    print_to_main_console("Type 'help' for commands or 'windows' for window setup instructions.\n", 6);
 
     while (running) {
         cout << "MCG Client> ";
@@ -482,9 +541,7 @@ void command_input_loop() {
         }
         else if (input == "connect") {
             if (connected_to_game) {
-                ConsoleHelper::SetColor(6); // Желтый
-                cout << "[ERROR] Already connected to game server. Disconnect first.\n";
-                ConsoleHelper::SetColor(7); // Белый
+                print_to_main_console("[ERROR] Already connected to game server. Disconnect first.\n", 6);
                 continue;
             }
 
@@ -501,7 +558,7 @@ void command_input_loop() {
                 continue;
             }
 
-            cout << "Password: ";
+            cout << "Config password: ";
             getline(cin, password);
 
             if (connect_to_game_server(ip)) {
@@ -562,6 +619,23 @@ void command_input_loop() {
 
             cout << "\nNote: Windows will automatically receive relevant updates.\n";
             cout << "========================================\n\n";
+
+            // Показываем статус открытых окон
+            cout << "\n=== Connected Windows Status ===\n";
+            cout << "Chat Windows:   " << chat_windows_count << " (messages will go here)\n";
+            cout << "Map Windows:    " << map_windows_count << " (map updates will go here)\n";
+            cout << "Status Windows: " << status_windows_count << " (status updates will go here)\n";
+            cout << "================================\n\n";
+
+            if (chat_windows_count == 0) {
+                print_to_main_console("Note: No chat windows open. Chat messages will appear in this console.\n", 14);
+            }
+            if (map_windows_count == 0) {
+                print_to_main_console("Note: No map windows open. Map updates will appear in this console.\n", 14);
+            }
+            if (status_windows_count == 0) {
+                print_to_main_console("Note: No status windows open. Status updates will appear in this console.\n", 14);
+            }
         }
         else if (input == "help") {
             cout << "\n=== MCG Client Commands ===\n";
@@ -650,10 +724,16 @@ void command_input_loop() {
 
 // Главная функция
 int main() {
+    ConsoleHelper::InitConsole();
+
     cout << "=== MCG Multi-Window Client ===\n";
     cout << "Local server port: " << LOCAL_PORT << "\n";
     cout << "Game server port: " << GAME_PORT << "\n";
     cout << "===============================\n\n";
+
+    cout << "Note: If you don't open separate windows, all information\n";
+    cout << "will be displayed directly in this console.\n";
+    cout << "Use 'windows' command to see how to open separate windows.\n\n";
 
     if (!network_init()) {
         cerr << "[FATAL] Network initialization failed!\n";

@@ -1,9 +1,9 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\",
+  "WorkspaceRootPath": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{55C5491D-AFBE-4B70-8DC4-F327F368B0E7}|MCG_Client.vcxproj|C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "AbsoluteMoniker": "D:0:0:{55C5491D-AFBE-4B70-8DC4-F327F368B0E7}|MCG_Client.vcxproj|C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{55C5491D-AFBE-4B70-8DC4-F327F368B0E7}|MCG_Client.vcxproj|solutionrelative:MCG_Client.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
@@ -20,11 +20,11 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "MCG_Client.cpp",
-              "DocumentMoniker": "C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp",
+              "DocumentMoniker": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp",
               "RelativeDocumentMoniker": "MCG_Client.cpp",
-              "ToolTip": "C:\\Users\\David\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp",
-              "RelativeToolTip": "MCG_Client.cpp",
-              "ViewState": "AgIAAFgAAAAAAAAAAAAowL0AAAAqAAAAAAAAAA==",
+              "ToolTip": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\MCG_Client.cpp*",
+              "RelativeToolTip": "MCG_Client.cpp*",
+              "ViewState": "AgIAAO4CAAAAAAAAAADwvwADAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-01-29T23:25:21.661Z",
               "EditorCaption": ""

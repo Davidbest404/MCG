@@ -1,9 +1,9 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\",
+  "WorkspaceRootPath": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{4B93ACEF-DF63-4284-80C4-6D808B05A0BE}|ChatWindow.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\ChatWindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "AbsoluteMoniker": "D:0:0:{4B93ACEF-DF63-4284-80C4-6D808B05A0BE}|ChatWindow.vcxproj|C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\ChatWindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{4B93ACEF-DF63-4284-80C4-6D808B05A0BE}|ChatWindow.vcxproj|solutionrelative:ChatWindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
@@ -20,11 +20,11 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "ChatWindow.cpp",
-              "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\ChatWindow.cpp",
+              "DocumentMoniker": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\ChatWindow.cpp",
               "RelativeDocumentMoniker": "ChatWindow.cpp",
-              "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\ChatWindow.cpp",
+              "ToolTip": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\ChatWindow\\ChatWindow.cpp",
               "RelativeToolTip": "ChatWindow.cpp",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAFsAAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-01-28T14:02:37.467Z",
               "EditorCaption": ""
