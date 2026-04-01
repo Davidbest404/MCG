@@ -1,7 +1,1 @@
-﻿  MCG_Server.cpp
-C:\Users\Student\Documents\GitHub\MCG\Server\MCG_Server.cpp(354,21): warning C4244: инициализация: преобразование "time_t" в "int", возможна потеря данных
-  Создание кода
-  Previous IPDB not found, fall back to full compilation.
-  All 976 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
-  Создание кода завершено
-  MCG_Server.vcxproj -> C:\Users\Student\Documents\GitHub\MCG\Server\x64\Release\MCG_Server.exe
+﻿  MCG_Server.vcxproj -> C:\Users\student\Documents\GitHub\MCG\Server\x64\Release\MCG_Server.exe
