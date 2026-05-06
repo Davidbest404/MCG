@@ -1,7 +1,0 @@
-﻿  ChatWindow.cpp
-C:\Users\student\Documents\GitHub\MCG\Client\ChatWindow\ChatWindow.cpp(30,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
-  Создание кода
-  Previous IPDB not found, fall back to full compilation.
-  All 11 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
-  Создание кода завершено
-  ChatWindow.vcxproj -> C:\Users\student\Documents\GitHub\MCG\Client\ChatWindow\x64\Release\ChatWindow.exe

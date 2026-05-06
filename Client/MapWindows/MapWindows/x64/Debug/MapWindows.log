@@ -1,3 +1,0 @@
-﻿  MapWindow.cpp
-C:\Users\student\Documents\GitHub\MCG\Client\MapWindows\MapWindow.cpp(39,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
-  MapWindows.vcxproj -> C:\Users\student\Documents\GitHub\MCG\Client\MapWindows\x64\Debug\MapWindows.exe

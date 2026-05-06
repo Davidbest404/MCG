@@ -1,12 +1,37 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\student\\Documents\\GitHub\\MCG\\Server\\",
-  "Documents": [],
+  "WorkspaceRootPath": "C:\\Users\\Teacher\\Documents\\GitHub\\MCG\\Server\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{B8306CB3-D805-43D7-8A5D-57525979F675}|MCG_Server.vcxproj|C:\\Users\\Teacher\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{B8306CB3-D805-43D7-8A5D-57525979F675}|MCG_Server.vcxproj|solutionrelative:MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "MCG_Server.cpp",
+              "DocumentMoniker": "C:\\Users\\Teacher\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp",
+              "RelativeDocumentMoniker": "MCG_Server.cpp",
+              "ToolTip": "C:\\Users\\Teacher\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp",
+              "RelativeToolTip": "MCG_Server.cpp",
+              "ViewState": "AgIAAEUAAAAAAAAAAAAAAAgAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-01-13T16:30:54.816Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }

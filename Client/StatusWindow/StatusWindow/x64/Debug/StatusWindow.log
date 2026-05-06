@@ -1,3 +1,0 @@
-﻿  StatusWindow.cpp
-C:\Users\student\Documents\GitHub\MCG\Client\StatusWindow\StatusWindow.cpp(39,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
-  StatusWindow.vcxproj -> C:\Users\student\Documents\GitHub\MCG\Client\StatusWindow\x64\Debug\StatusWindow.exe
