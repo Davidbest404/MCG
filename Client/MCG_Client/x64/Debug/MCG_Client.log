@@ -1,3 +1,4 @@
 ﻿  MCG_Client.cpp
-C:\Users\Teacher\Documents\GitHub\MCG\Client\MCG_Client.cpp(116,60): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Teacher\Documents\GitHub\MCG\Client\MCG_Client.cpp(61,20): warning C4244: =: преобразование "SOCKET" в "int", возможна потеря данных
+C:\Users\Teacher\Documents\GitHub\MCG\Client\MCG_Client.cpp(107,43): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
   MCG_Client.vcxproj -> C:\Users\Teacher\Documents\GitHub\MCG\Client\x64\Debug\MCG_Client.exe
