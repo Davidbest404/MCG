@@ -1,215 +1,222 @@
-﻿// MCG_Server.cpp - with IPv6 support
-#include <iostream>
+﻿#include <iostream>
+#include <fstream>
 #include <vector>
 #include <map>
 #include <string>
 #include <thread>
 #include <mutex>
+#include <atomic>
+#include <ctime>
+#include <sstream>
+#include <algorithm>
+#include <random>
 
+// Кроссплатформенные определения socket_t
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
 typedef SOCKET socket_t;
+#define socket_close closesocket
+#define socket_errno WSAGetLastError()
+typedef long ssize_t;
 #else
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <cstring>
-#include <cstdio>
+#include <netdb.h>
+#include <errno.h>
 typedef int socket_t;
-#define INVALID_SOCKET -1
-#define SOCKET_ERROR -1
-#define closesocket close
+#define socket_close close
+#define socket_errno errno
 #endif
 
 using namespace std;
 
+// Константы портов
 const int PORT = 8080;
 
+// Глобальные переменные
+atomic<bool> running(true);
 vector<socket_t> clients;
-int num_clients = 0;
-map<socket_t, pair<string, int>> users_and_ids;
-int next_id = 1;
+mutex clients_mutex;
 
-void add_user(socket_t client_socket, const std::string& username)
-{
-    users_and_ids[client_socket] = make_pair(username, next_id++);
+// Функция для отправки данных
+bool socket_send(socket_t sock, const string& data) {
+    ssize_t result = 0;
+#ifdef _WIN32
+    result = send(sock, data.c_str(), static_cast<int>(data.size()), 0);
+#else
+    result = send(sock, data.c_str(), data.size(), 0);
+#endif
+    return result >= 0;
 }
 
-void broadcast_message(const std::string& message, socket_t sender)
-{
-    for (auto client : clients)
-    {
-        if (client != sender)
-        {
-            send(client, message.c_str(), message.size() + 1, 0);
-        }
+// Получение данных
+string socket_receive(socket_t sock, int timeout_ms = 1000) {
+    // Установка таймаута
+#ifdef _WIN32
+    DWORD timeout = timeout_ms;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+#else
+    struct timeval timeout;
+    timeout.tv_sec = timeout_ms / 1000;
+    timeout.tv_usec = (timeout_ms % 1000) * 1000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+#endif
+
+    char buffer[4096];
+    memset(buffer, 0, sizeof(buffer));
+    ssize_t received = 0;
+#ifdef _WIN32
+    received = recv(sock, buffer, sizeof(buffer) - 1, 0);
+#else
+    received = recv(sock, buffer, sizeof(buffer) - 1, 0);
+#endif
+    if (received > 0) {
+        buffer[received] = '\0';
+        return string(buffer);
     }
+    return "";
 }
 
-bool check_credentials(const std::string& username, const std::string& password)
-{
-    return true;
+// Создание accept-соединения
+socket_t accept_connection(socket_t server_socket) {
+#ifdef _WIN32
+    int addr_len = sizeof(sockaddr_in);
+    return accept(server_socket, nullptr, &addr_len);
+#else
+    socklen_t addr_len = sizeof(sockaddr_in);
+    return accept(server_socket, nullptr, &addr_len);
+#endif
 }
 
+// Обработка клиента
 void handle_client(socket_t client_socket)
 {
     char buffer[1024];
-    bool authenticated = false;
-
-    while (!authenticated)
-    {
-        memset(buffer, 0, sizeof(buffer));
-        int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-        if (bytes_received <= 0)
-        {
-            cout << "Client disconnected during authentication." << endl;
-            closesocket(client_socket);
-            return;
-        }
-
-        string packet(buffer, bytes_received);
-        size_t pos = packet.find('|');
-        if (packet.substr(0, pos) == "AUTH")
-        {
-            string credentials = packet.substr(pos + 1);
-            size_t next_pos = credentials.find('|');
-            string username = credentials.substr(0, next_pos);
-            string password = credentials.substr(next_pos + 1);
-
-            if (check_credentials(username, password))
-            {
-                authenticated = true;
-                add_user(client_socket, username);
-                send(client_socket, "OK", 2, 0);
-            }
-            else
-            {
-                string error_message = "Invalid format. Use AUTH|username|password\n";
-                send(client_socket, error_message.c_str(), error_message.size() + 1, 0);
-            }
-        }
-        else
-        {
-            string error_message = "Incorrect command format. Please use AUTH|username|password\n";
-            send(client_socket, error_message.c_str(), error_message.size() + 1, 0);
-        }
-    }
 
     while (true)
     {
         memset(buffer, 0, sizeof(buffer));
         int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+
         if (bytes_received <= 0)
         {
-            cout << "Client disconnected." << endl;
-            closesocket(client_socket);
-            clients.erase(remove(clients.begin(), clients.end(), client_socket), clients.end());
-            num_clients--;
-            cout << "Current number of clients: " << num_clients << endl;
+            // Клиент отключился или произошла ошибка
             break;
         }
 
-        string message(buffer, bytes_received);
-        int user_id = users_and_ids[client_socket].second;
-        string username = users_and_ids[client_socket].first;
+        std::string message(buffer, bytes_received);
 
-        string signed_message = "[" + to_string(user_id) + "] " + username + ": " + message;
-        broadcast_message(signed_message, client_socket);
+        // Обработка команды /disconnect
+        if (message == "/disconnect")
+        {
+            // Сообщение клиенту (опционально)
+            std::string disconnect_msg = "Disconnecting...\n";
+            send(client_socket, disconnect_msg.c_str(), disconnect_msg.size() + 1, 0);
+
+            // Выходим из цикла, чтобы закрыть сокет
+            break;
+        }
+
+        // Рассылка сообщения другим клиентам
+        std::lock_guard<std::mutex> lock(clients_mutex);
+        for (auto& client : clients)
+        {
+            if (client != client_socket)
+            {
+                send(client, message.c_str(), message.size() + 1, 0);
+            }
+        }
     }
+
+    // После выхода из цикла закрываем сокет
+    socket_close(client_socket);
+    // Удаляем клиента из списка
+    {
+        std::lock_guard<std::mutex> lock(clients_mutex);
+        auto it = std::find(clients.begin(), clients.end(), client_socket);
+        if (it != clients.end())
+            clients.erase(it);
+    }
+    std::cout << "Client disconnected." << std::endl;
 }
 
-int main()
-{
+int main() {
+    // Инициализация сети
 #ifdef _WIN32
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
 
-    int MAX_CLIENTS;
-    cout << "Write max clients on server: ";
-    cin >> MAX_CLIENTS;
-    cin.ignore();
-
-    // Create IPv6 socket
-    socket_t server_socket = socket(AF_INET6, SOCK_STREAM, 0);
-    if (server_socket == INVALID_SOCKET)
-    {
-        cerr << "Failed to create socket." << endl;
-        return 1;
-    }
-
-    // Enable dual-stack (IPv4 & IPv6) if needed
-    int dual_stack = 0; // 0 disables dual-stack, 1 enables
-#ifdef _WIN32
-    setsockopt(server_socket, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&dual_stack, sizeof(dual_stack));
-#else
-    setsockopt(server_socket, IPPROTO_IPV6, IPV6_V6ONLY, &dual_stack, sizeof(dual_stack));
-#endif
-
-    sockaddr_in6 server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin6_family = AF_INET6;
-    server_addr.sin6_port = htons(PORT);
-    server_addr.sin6_addr = in6addr_any; // bind to all interfaces (IPv6 and IPv4 if dual-stack enabled)
-
-    if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR)
-    {
-        cerr << "Failed to bind socket." << endl;
-        closesocket(server_socket);
+    // Создаем сокет
+    socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        std::cerr << "[ERROR] Socket creation failed." << std::endl;
 #ifdef _WIN32
         WSACleanup();
 #endif
         return 1;
     }
 
-    if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR)
-    {
-        cerr << "Failed to listen on socket." << endl;
-        closesocket(server_socket);
+    // Подготовка адреса
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    // Связываем
+    if (bind(sock, (sockaddr*)&addr, sizeof(addr)) < 0) {
+        std::cerr << "[ERROR] Bind failed." << std::endl;
+        socket_close(sock);
 #ifdef _WIN32
         WSACleanup();
 #endif
         return 1;
     }
 
-    cout << "Server is listening on port " << PORT << " with IPv6 support." << endl;
-
-    while (true)
-    {
-        sockaddr_in6 client_addr;
-        socklen_t addr_len = sizeof(client_addr);
-        socket_t client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &addr_len);
-        if (client_socket == INVALID_SOCKET)
-        {
-            cerr << "Failed to accept connection." << endl;
-            continue;
-        }
-
-        if (num_clients >= MAX_CLIENTS)
-        {
-            const char* error_message = "Connection refused: maximum number of clients reached.\n";
-            send(client_socket, error_message, strlen(error_message), 0);
-            closesocket(client_socket);
-            continue;
-        }
-
-        clients.push_back(client_socket);
-        num_clients++;
-        cout << "New client connected. Current number of clients: " << num_clients << endl;
-
-        thread(handle_client, client_socket).detach();
+    // Слушаем
+    if (listen(sock, 5) < 0) {
+        std::cerr << "[ERROR] Listen failed." << std::endl;
+        socket_close(sock);
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return 1;
     }
 
-    // Cleanup
+    std::cout << "Listening on port " << PORT << "...\n";
+
+    // Основной цикл
+    while (running)
+    {
+        socket_t client_sock = accept_connection(sock);
+        if (client_sock < 0)
+        {
+            std::cerr << "[ERROR] Accept failed." << std::endl;
+            continue;
+        }
+        std::cout << "Client connected.\n";
+
+        // Добавляем клиента
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex);
+            clients.push_back(client_sock);
+        }
+
+        // Обработка клиента в отдельном потоке
+        std::thread(handle_client, client_sock).detach();
+    }
+
+    // Очистка
+    socket_close(sock);
 #ifdef _WIN32
-    closesocket(server_socket);
     WSACleanup();
-#else
-    close(server_socket);
 #endif
 
     return 0;

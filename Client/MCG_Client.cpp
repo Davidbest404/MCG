@@ -51,55 +51,87 @@ int main()
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
 
-    string ip_address;
-    cout << "Enter server IP address: ";
-    getline(cin, ip_address);
+    std::string ip_address;
+    socket_t sock = INVALID_SOCKET;
 
-    socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == INVALID_SOCKET)
-    {
-        cerr << "Failed to create socket." << endl;
-        return 1;
-    }
-
-    sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
-    inet_pton(AF_INET, ip_address.c_str(), &server_addr.sin_addr);
-
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR)
-    {
-        cerr << "Failed to connect to server." << endl;
-        closesocket(sock);
-#ifdef _WIN32
-        WSACleanup();
-#endif
-        return 1;
-    }
-
-    cout << "Connected to the server." << endl;
-
-    // Start thread to receive messages
-    std::thread receiver(receive_messages, sock);
-
-    string message;
     while (true)
     {
-        getline(cin, message);
-        if (message == "disconnect")
+        std::cout << "Enter server IP address (or type 'exit' to quit): ";
+        getline(cin, ip_address);
+        if (ip_address == "exit" || ip_address == "Exit")
         {
-            break;
+            break; // Выход из программы
         }
-        send(sock, message.c_str(), message.size() + 1, 0);
+
+        // Создаем сокет и подключаемся
+        sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock == INVALID_SOCKET)
+        {
+            std::cerr << "Failed to create socket." << std::endl;
+            continue;
+        }
+
+        sockaddr_in server_addr{};
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(PORT);
+        inet_pton(AF_INET, ip_address.c_str(), &server_addr.sin_addr);
+
+        if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR)
+        {
+            std::cerr << "Failed to connect to server." << std::endl;
+#ifdef _WIN32
+            closesocket(sock);
+#else
+            close(sock);
+#endif
+            continue; // Попытка снова подключиться
+        }
+        bool connected = true;
+        std::cout << "Connected to the server." << std::endl;
+
+        // Запускаем поток для получения сообщений
+        std::thread receiver(receive_messages, sock);
+
+        // Ввод сообщений
+        while (connected)
+        {
+            std::string message;
+            getline(cin, message);
+            if (message == "disconnect")
+            {
+                // Не завершаем программу, а закрываем соединение и возвращаемся к вводу IP
+                std::cout << "Disconnecting from server...\n";
+                std::cout << "It may crush programm...\n";
+                connected = false;
+            }
+            else if (message == "Exit" || message == "exit")
+            {
+                // Завершение работы программы
+                std::cout << "Exiting program.\n";
+                break;
+            }
+            else
+            {
+                // Отправляем сообщение
+                send(sock, message.c_str(), message.size() + 1, 0);
+            }
+        }
+
+        // Остановка получения сообщений
+        // Здесь можно завершить поток или просто оставить его завершиться при разрыве соединения
+        // Для простоты, пусть поток завершится при закрытии сокета
+
+        // Закрываем сокет перед следующей попыткой подключения
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        close(sock);
+#endif
+        sock = INVALID_SOCKET;
     }
 
-    // Cleanup
-    receiver.detach();
 #ifdef _WIN32
-    closesocket(sock);
     WSACleanup();
-#else
-    close(sock);
 #endif
 
     return 0;
