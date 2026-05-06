@@ -1,0 +1,7 @@
+﻿  StatusWindow.cpp
+C:\Users\student\Documents\GitHub\MCG\Client\StatusWindow\StatusWindow.cpp(39,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
+  Создание кода
+  Previous IPDB not found, fall back to full compilation.
+  All 12 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Создание кода завершено
+  StatusWindow.vcxproj -> C:\Users\student\Documents\GitHub\MCG\Client\StatusWindow\x64\Release\StatusWindow.exe

@@ -1,0 +1,2 @@
+﻿  MCG_Client.cpp
+LINK : fatal error LNK1201: Ошибка при записи в базу данных "C:\Users\Student\Documents\GitHub\MCG\Client\x64\Debug\MCG_Client.pdb" программы; возможно, не хватает места на диске, недопустимый путь или недостаточно прав
