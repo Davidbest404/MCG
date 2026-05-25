@@ -14,6 +14,8 @@
 #include <unistd.h>
 #endif
 
+using namespace std;
+
 const char* LOCAL_IP = "127.0.0.1"; // IP
 char* SERVER_IP; // IP сервера
 int PORT = 8080;
@@ -37,19 +39,19 @@ void receive_messages(int sock) {
         int bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
         if (bytes_received <= 0) break;
         buffer[bytes_received] = '\0';
-        std::cout << "Received: " << buffer << std::endl;
+        cout << "Received: " << buffer << endl;
     }
 }
 
 int main() {
-    std::string Server_IP;
-    std::cin >> Server_IP;
+    string Server_IP;
+    cin >> Server_IP;
     if (Server_IP.empty())
     {
         Server_IP = LOCAL_IP;
     }
     int Port;
-    std::cin >> Port;
+    cin >> Port;
     if (Port == NULL)
     {
         Port = PORT;
@@ -64,7 +66,7 @@ int main() {
 #endif
 
     if (sockfd < 0) {
-        std::cerr << "Failed to create socket" << std::endl;
+        cerr << "Failed to create socket" << endl;
         cleanup_winsock();
         return 1;
     }
@@ -85,7 +87,7 @@ int main() {
 #endif
 
     if (connect(sockfd, (sockaddr*)&server_addr, sizeof(server_addr)) != 0) {
-        std::cerr << "Failed to connect to server" << std::endl;
+        cerr << "Failed to connect to server" << endl;
 #ifdef _WIN32
         closesocket(sockfd);
         cleanup_winsock();
@@ -96,13 +98,13 @@ int main() {
     }
 
     // Запуск потока для получения сообщений
-    std::thread receiver(receive_messages, sockfd);
+    thread receiver(receive_messages, sockfd);
     receiver.detach();
 
     // Основной цикл для отправки сообщений
-    std::string msg;
+    string msg;
     while (true) {
-        std::getline(std::cin, msg);
+        getline(cin, msg);
         if (msg == "exit") break; // чтобы выйти из клиента
         send(sockfd, msg.c_str(), msg.size(), 0);
     }

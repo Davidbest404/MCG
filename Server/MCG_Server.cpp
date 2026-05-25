@@ -15,9 +15,11 @@
 #include <arpa/inet.h>
 #endif
 
+using namespace std;
+
 const int PORT = 8080;
-std::vector<int> clients;
-std::mutex clients_mutex;
+vector<int> clients;
+mutex clients_mutex;
 
 #ifdef _WIN32
 void init_winsock() {
@@ -32,8 +34,8 @@ void init_winsock() {}
 void cleanup_winsock() {}
 #endif
 
-void broadcast_message(const std::string& message, int sender_fd) {
-    std::lock_guard<std::mutex> lock(clients_mutex);
+void broadcast_message(const string& message, int sender_fd) {
+    lock_guard<mutex> lock(clients_mutex);
     for (int client_fd : clients) {
         if (client_fd != sender_fd) {
             send(client_fd, message.c_str(), message.size(), 0);
@@ -47,13 +49,13 @@ void handle_client(int client_fd) {
         int bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
         if (bytes_received <= 0) break;
         buffer[bytes_received] = '\0';
-        std::string msg = "Client: " + std::string(buffer);
-        std::cout << msg << std::endl;
+        string msg = "Client: " + string(buffer);
+        cout << msg << endl;
         broadcast_message(msg, client_fd);
     }
     {
-        std::lock_guard<std::mutex> lock(clients_mutex);
-        clients.erase(std::remove(clients.begin(), clients.end(), client_fd), clients.end());
+        lock_guard<mutex> lock(clients_mutex);
+        clients.erase(remove(clients.begin(), clients.end(), client_fd), clients.end());
     }
 #ifdef _WIN32
     closesocket(client_fd);
@@ -64,7 +66,7 @@ void handle_client(int client_fd) {
 
 int main() {
     int Port;
-    std::cin >> Port;
+    cin >> Port;
     if (Port == NULL)
     {
         Port = PORT;
@@ -89,7 +91,7 @@ int main() {
     listen(server_fd, 10);
 #endif
 
-    std::cout << "Server started on port " << Port << std::endl;
+    cout << "Server started on port " << Port << endl;
 
     while (true) {
 #ifdef _WIN32
@@ -102,10 +104,10 @@ int main() {
         int client_fd = accept(server_fd, (sockaddr*)&client_addr, &addrlen);
 #endif
         {
-            std::lock_guard<std::mutex> lock(clients_mutex);
+            lock_guard<mutex> lock(clients_mutex);
             clients.push_back(client_fd);
         }
-        std::thread(handle_client, client_fd).detach();
+        thread(handle_client, client_fd).detach();
     }
 
 #ifdef _WIN32
