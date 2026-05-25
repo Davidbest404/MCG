@@ -1,17 +1,22 @@
-﻿#include <iostream>
+﻿#include "lua.hpp"   // вместо трёх отдельных include
+#include <iostream>
+#include <variant>
+#include <string>
 #include <random>
 #include <fstream>
 #include <cstring>
 #include <thread>
 #include <vector>
-#include <string>
 #include <map>
 #include <algorithm>
 #include <atomic>
 #include <ctime>
 #include <mutex>
 #include <sstream>
-
+#include <any>
+#include <unordered_map>
+#include <functional>
+#include <memory>
 // Только Windows
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -22,6 +27,8 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 using namespace std;
+
+lua_State* gLuaState = nullptr;
 
 const int PORT = 8080;
 
@@ -63,19 +70,37 @@ enum class ActionType {
     SKIP
 };
 
-struct Player {
+class Player {
+public:
+    //обязательные системные поля
+    SOCKET sock = INVALID_SOCKET;
     string name;
     int id;
     bool is_admin;
-    bool is_ready = false;
-    ActionType last_action = ActionType::WAIT;
     int hp = 100;
     int max_hp = 100;
-    int level = 1;
-    int exp = 0;
+    bool is_ready = false;
+    ActionType last_action = ActionType::WAIT;
     int x = 0;
     int y = 0;
-    int gold = 0;
+
+    // Динамические атрибуты
+    unordered_map<string, variant<int, float, string, bool, ActionType>> attrs;
+
+    template<typename T>
+    T getAttr(const string& key, const T& defaultValue = {}) const {
+        auto it = attrs.find(key);
+        if (it != attrs.end() && holds_alternative<T>(it->second))
+            return get<T>(it->second);
+        return defaultValue;
+    }
+
+    void setAttr(const string& key, const variant<int, float, string, bool, ActionType>& value) {
+        attrs[key] = value;
+    }
+
+    bool hasAttr(const string& key) const { return attrs.count(key); }
+    void removeAttr(const string& key) { attrs.erase(key); }
 };
 
 struct GameState {
@@ -108,6 +133,20 @@ void send_time_remaining(SOCKET client_sock);
 void save_game_state(const string& filename);
 void load_game_state(const string& filename);
 void auto_save_thread();
+// Lua support
+void LoadLuaScripts();
+void register_lua_functions();
+int lua_get_hp(lua_State* L);
+int lua_set_hp(lua_State* L);
+int lua_get_max_hp(lua_State* L);
+int lua_set_max_hp(lua_State* L);
+int lua_get_x(lua_State* L);
+int lua_set_x(lua_State* L);
+int lua_get_y(lua_State* L);
+int lua_set_y(lua_State* L);
+int lua_send_to_player(lua_State* L);
+int lua_broadcast(lua_State* L);
+int lua_get_player_name(lua_State* L);
 
 int Random(int max, int min) {
     return rand() % (max - min + 1) + min;
@@ -228,6 +267,47 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     string cmd;
     iss >> cmd;
 
+    // ----- Динамические Lua-команды -----
+// Освобождаем мьютекс, чтобы Lua не блокировал сервер
+    lock.unlock();
+
+    lua_getglobal(gLuaState, cmd.c_str());
+    if (lua_isfunction(gLuaState, -1)) {
+        lua_pushinteger(gLuaState, player_id);
+        // Собираем аргументы в таблицу (args[1], args[2] ...)
+        lua_newtable(gLuaState);
+        vector<string> args;
+        string arg;
+        while (iss >> arg) args.push_back(arg);
+        for (size_t i = 0; i < args.size(); i++) {
+            lua_pushinteger(gLuaState, i + 1);
+            lua_pushstring(gLuaState, args[i].c_str());
+            lua_settable(gLuaState, -3);
+        }
+        if (lua_pcall(gLuaState, 2, 1, 0) != LUA_OK) {
+            const char* err = lua_tostring(gLuaState, -1);
+            send(client_sock, err, strlen(err), 0);
+            send(client_sock, "\n", 1, 0);
+            lua_pop(gLuaState, 1);
+        }
+        else {
+            if (lua_isstring(gLuaState, -1)) {
+                const char* result = lua_tostring(gLuaState, -1);
+                send(client_sock, result, strlen(result), 0);
+                send(client_sock, "\n", 1, 0);
+            }
+            lua_pop(gLuaState, 1);
+        }
+        return;
+    }
+    else {
+        lua_pop(gLuaState, 1); // удаляем nil
+    }
+
+    // Возвращаем блокировку, так как дальше идут встроенные команды
+    lock.lock();
+    // ----- Конец Lua-команд -----
+
     if (cmd == "move") {
         string direction;
         iss >> direction;
@@ -270,7 +350,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             send(client_sock, "You already made your move this turn!\n", 40, 0);
             return;
         }
-        int damage = 10 + (attacker.level * 2);
+        int damage = 10;
         target.hp -= damage;
         if (target.hp < 0) {
             target.hp = 100;
@@ -279,34 +359,19 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         }
         attacker.last_action = ActionType::ATTACK;
         attacker.is_ready = true;
-        attacker.exp += 5;
-
-        bool level_up = false;
-        if (attacker.exp >= 100) {
-            attacker.level++;
-            attacker.exp = 0;
-            attacker.max_hp += 20;
-            attacker.hp = attacker.max_hp;
-            level_up = true;
-        }
 
         string response = "You will attack " + target.name + " for " +
             to_string(Random(damage, damage / 2)) + " damage!\n";
         if (target.hp <= 0) {
             response += target.name + " has been defeated!\n";
-            attacker.gold += 50;
-            attacker.exp += 20;
-            response += "You gained 50 gold and 20 XP!\n";
         }
         send(client_sock, response.c_str(), static_cast<int>(response.length()), 0);
 
         string broadcast_msg = attacker.name + " attacked " + target.name +
             " for " + to_string(damage) + " damage!";
-        string level_up_msg = attacker.name + " reached level " + to_string(attacker.level) + "!";
 
         lock.unlock();
         broadcast_message(broadcast_msg, client_sock);
-        if (level_up) broadcast_message(level_up_msg, INVALID_SOCKET);
     }
     else if (cmd == "defend") {
         if (game_state.players.find(player_id) == game_state.players.end()) {
@@ -370,9 +435,6 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         string status = "\n=== Your Status ===\n";
         status += "Name: " + player.name + "\n";
         status += "HP: " + to_string(player.hp) + "/" + to_string(player.max_hp) + "\n";
-        status += "Level: " + to_string(player.level) + "\n";
-        status += "XP: " + to_string(player.exp) + "/100\n";
-        status += "Gold: " + to_string(player.gold) + "\n";
         status += "Position: (" + to_string(player.x) + "," + to_string(player.y) + ")\n";
         status += "Ready: " + string(player.is_ready ? "Yes" : "No") + "\n";
         status += "==================\n";
@@ -442,6 +504,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
                 send(client_sock, "HP set successfully.\n", 22, 0);
             }
         }
+        else if (cmd == "reload_scripts") {
+            LoadLuaScripts();
+            send(client_sock, "Lua scripts reloaded.\n", 22, 0);
+        }
     }
     else {
         send(client_sock, "Unknown command. Type /help for available commands.\n", 55, 0);
@@ -455,22 +521,48 @@ void save_game_state(const string& filename) {
         return;
     }
     lock_guard<mutex> lock(game_mutex);
+
+    // Версия формата (для совместимости)
+    file << 2 << endl;
+
     file << game_state.current_turn << endl;
     file << game_state.turn_duration_seconds << endl;
     file << game_state.is_active << endl;
     file << game_state.players.size() << endl;
+
     for (auto& pair : game_state.players) {
         auto& player = pair.second;
+        // Основные поля
         file << player.name << " "
             << player.hp << " "
             << player.max_hp << " "
-            << player.level << " "
-            << player.exp << " "
             << player.x << " "
             << player.y << " "
-            << player.gold << " "
-            << player.is_admin << endl;
+            << player.is_admin;
+
+        // Сохраняем динамические атрибуты
+        file << " " << player.attrs.size();
+        for (const auto& attr : player.attrs) {
+            file << " " << attr.first;
+            if (holds_alternative<int>(attr.second)) {
+                file << " int " << get<int>(attr.second);
+            }
+            else if (holds_alternative<float>(attr.second)) {
+                file << " float " << get<float>(attr.second);
+            }
+            else if (holds_alternative<string>(attr.second)) {
+                file << " string " << get<string>(attr.second);
+            }
+            else if (holds_alternative<bool>(attr.second)) {
+                file << " bool " << (get<bool>(attr.second) ? 1 : 0);
+            }
+            else if (holds_alternative<ActionType>(attr.second)) {
+                file << " ActionType " << (int)get<ActionType>(attr.second);
+            }
+        }
+        file << endl;
     }
+
     int log_size = min(10, (int)game_state.turn_log.size());
     file << log_size << endl;
     for (int i = 0; i < log_size; i++) {
@@ -492,31 +584,71 @@ void load_game_state(const string& filename) {
     game_state.players.clear();
     game_state.turn_log.clear();
     next_client_id = 1;
+
+    int version;
+    file >> version;
+    if (version != 2) {
+        cerr << "Unsupported save file version (expected 2, got " << version << "). Aborting load." << endl;
+        return;
+    }
+
     file >> game_state.current_turn;
     file >> game_state.turn_duration_seconds;
     file >> game_state.is_active;
     int player_count;
     file >> player_count;
+
     for (int i = 0; i < player_count; i++) {
         Player player;
         file >> player.name
             >> player.hp
             >> player.max_hp
-            >> player.level
-            >> player.exp
             >> player.x
             >> player.y
-            >> player.gold
             >> player.is_admin;
+
+        size_t attr_count;
+        file >> attr_count;
+        for (size_t j = 0; j < attr_count; ++j) {
+            string key, typeStr;
+            file >> key >> typeStr;
+            if (typeStr == "int") {
+                int val; file >> val;
+                player.setAttr(key, val);
+            }
+            else if (typeStr == "float") {
+                float val; file >> val;
+                player.setAttr(key, val);
+            }
+            else if (typeStr == "string") {
+                string val; file >> val;
+                player.setAttr(key, val);
+            }
+            else if (typeStr == "bool") {
+                int val; file >> val;
+                player.setAttr(key, (bool)val);
+            }
+            else if (typeStr == "ActionType") {
+                int val; file >> val;
+                player.setAttr(key, static_cast<ActionType>(val));
+            }
+            else {
+                cerr << "Unknown attribute type: " << typeStr << ", skipping key " << key << endl;
+                // Пропускаем до конца строки (можно просто читать строку, но упростим)
+            }
+        }
+
         int new_id = next_client_id++;
         player.id = new_id;
         game_state.players[new_id] = player;
+
         ConsoleHelper::SetColor(4);
         cout << "Loaded player: " << player.name
             << " (HP: " << player.hp << "/" << player.max_hp
-            << ", Level: " << player.level << ")" << endl;
+            << ")" << endl;
         ConsoleHelper::SetColor(8);
     }
+
     int log_size;
     file >> log_size;
     file.ignore();
@@ -544,6 +676,229 @@ void auto_save_thread() {
             ConsoleHelper::SetColor(8);
         }
     }
+}
+
+// ---------- Lua functions implementation ----------
+int lua_get_hp(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    lua_pushinteger(L, (it != game_state.players.end()) ? it->second.hp : 0);
+    return 1;
+}
+int lua_set_hp(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    int hp = luaL_checkinteger(L, 2);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end()) {
+        it->second.hp = max(0, min(hp, it->second.max_hp));
+    }
+    return 0;
+}
+int lua_get_max_hp(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    lua_pushinteger(L, (it != game_state.players.end()) ? it->second.max_hp : 0);
+    return 1;
+}
+int lua_set_max_hp(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    int max_hp = luaL_checkinteger(L, 2);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end()) {
+        it->second.max_hp = max_hp;
+        if (it->second.hp > max_hp) it->second.hp = max_hp;
+    }
+    return 0;
+}
+int lua_get_x(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    lua_pushinteger(L, (it != game_state.players.end()) ? it->second.x : 0);
+    return 1;
+}
+int lua_set_x(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    int x = luaL_checkinteger(L, 2);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end()) it->second.x = x;
+    return 0;
+}
+int lua_get_y(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    lua_pushinteger(L, (it != game_state.players.end()) ? it->second.y : 0);
+    return 1;
+}
+int lua_set_y(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    int y = luaL_checkinteger(L, 2);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end()) it->second.y = y;
+    return 0;
+}
+int lua_get_player_name(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    lua_pushstring(L, (it != game_state.players.end()) ? it->second.name.c_str() : "");
+    return 1;
+}
+int lua_send_to_player(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    const char* msg = luaL_checkstring(L, 2);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end() && it->second.sock != INVALID_SOCKET) {
+        string full = string(msg) + "\n";
+        send(it->second.sock, full.c_str(), (int)full.size(), 0);
+    }
+    return 0;
+}
+int lua_broadcast(lua_State* L) {
+    const char* msg = luaL_checkstring(L, 1);
+    broadcast_message(msg, INVALID_SOCKET);
+    return 0;
+}
+// Возвращает таблицу с ID всех игроков (индексы 1,2,3...)
+int lua_get_all_players(lua_State* L) {
+    lock_guard<mutex> lock(game_mutex);
+    lua_newtable(L);
+    int index = 1;
+    for (const auto& pair : game_state.players) {
+        lua_pushinteger(L, index++);
+        lua_pushinteger(L, pair.first); // ID игрока
+        lua_settable(L, -3);
+    }
+    return 1;
+}
+// Возвращает таблицу ID игроков в радиусе (манхэттенское расстояние) от точки (x,y)
+int lua_get_players_in_radius(lua_State* L) {
+    int x = luaL_checkinteger(L, 1);
+    int y = luaL_checkinteger(L, 2);
+    int radius = luaL_checkinteger(L, 3);
+    lock_guard<mutex> lock(game_mutex);
+    lua_newtable(L);
+    int index = 1;
+    for (const auto& pair : game_state.players) {
+        const Player& p = pair.second;
+        int dx = p.x - x;
+        int dy = p.y - y;
+        int dist = abs(dx) + abs(dy); // манхэттенское расстояние (можно заменить на sqrt для евклидова)
+        if (dist <= radius) {
+            lua_pushinteger(L, index++);
+            lua_pushinteger(L, pair.first);
+            lua_settable(L, -3);
+        }
+    }
+    return 1;
+}
+// Возвращает расстояние между двумя точками (манхэттенское)
+int lua_get_distance(lua_State* L) {
+    int x1 = luaL_checkinteger(L, 1);
+    int y1 = luaL_checkinteger(L, 2);
+    int x2 = luaL_checkinteger(L, 3);
+    int y2 = luaL_checkinteger(L, 4);
+    int dist = abs(x1 - x2) + abs(y1 - y2);
+    lua_pushinteger(L, dist);
+    return 1;
+}
+int lua_get_attr(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end()) {
+        const auto& attrs = it->second.attrs;
+        auto ait = attrs.find(key);
+        if (ait != attrs.end()) {
+            if (holds_alternative<int>(ait->second))
+                lua_pushinteger(L, get<int>(ait->second));
+            else if (holds_alternative<float>(ait->second))
+                lua_pushnumber(L, get<float>(ait->second));
+            else if (holds_alternative<string>(ait->second))
+                lua_pushstring(L, get<string>(ait->second).c_str());
+            else if (holds_alternative<bool>(ait->second))
+                lua_pushboolean(L, get<bool>(ait->second));
+            else if (holds_alternative<ActionType>(ait->second))
+                lua_pushinteger(L, static_cast<int>(get<ActionType>(ait->second)));
+            else
+                lua_pushnil(L);
+        }
+        else {
+            lua_pushnil(L);
+        }
+    }
+    else {
+        lua_pushnil(L);
+    }
+    return 1;
+}
+int lua_set_attr(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end()) {
+        if (lua_isinteger(L, 3))
+            it->second.setAttr(key, (int)lua_tointeger(L, 3));
+        else if (lua_isnumber(L, 3))
+            it->second.setAttr(key, (float)lua_tonumber(L, 3));
+        else if (lua_isstring(L, 3))
+            it->second.setAttr(key, string(lua_tostring(L, 3)));
+        else if (lua_isboolean(L, 3))
+            it->second.setAttr(key, (bool)lua_toboolean(L, 3));
+        else
+            return luaL_error(L, "Unsupported attribute type");
+    }
+    return 0;
+}
+
+void register_lua_functions() {
+    lua_register(gLuaState, "get_hp", lua_get_hp);
+    lua_register(gLuaState, "set_hp", lua_set_hp);
+    lua_register(gLuaState, "get_max_hp", lua_get_max_hp);
+    lua_register(gLuaState, "set_max_hp", lua_set_max_hp);
+    lua_register(gLuaState, "get_x", lua_get_x);
+    lua_register(gLuaState, "set_x", lua_set_x);
+    lua_register(gLuaState, "get_y", lua_get_y);
+    lua_register(gLuaState, "set_y", lua_set_y);
+    lua_register(gLuaState, "get_player_name", lua_get_player_name);
+    lua_register(gLuaState, "send_to_player", lua_send_to_player);
+    lua_register(gLuaState, "broadcast", lua_broadcast);
+    lua_register(gLuaState, "get_all_players", lua_get_all_players);
+    lua_register(gLuaState, "get_players_in_radius", lua_get_players_in_radius);
+    lua_register(gLuaState, "get_distance", lua_get_distance);
+    lua_register(gLuaState, "get_attr", lua_get_attr);
+    lua_register(gLuaState, "set_attr", lua_set_attr);
+}
+
+void LoadLuaScripts() {
+    CreateDirectoryA("actions", NULL);   // ANSI-версия
+    WIN32_FIND_DATAA findData;           // ANSI-структура
+    HANDLE hFind = FindFirstFileA("actions/*.lua", &findData); // ANSI-версия
+    if (hFind == INVALID_HANDLE_VALUE) {
+        cout << "No Lua scripts in actions/ folder." << endl;
+        return;
+    }
+    do {
+        string filename = "actions/" + string(findData.cFileName); // теперь cFileName - char[]
+        if (luaL_dofile(gLuaState, filename.c_str()) != LUA_OK) {
+            cerr << "Lua error in " << filename << ": " << lua_tostring(gLuaState, -1) << endl;
+            lua_pop(gLuaState, 1);
+        }
+        else {
+            cout << "Loaded: " << filename << endl;
+        }
+    } while (FindNextFileA(hFind, &findData)); // ANSI-версия
+    FindClose(hFind);
 }
 
 void handle_client(SOCKET client_sock) {
@@ -597,6 +952,7 @@ void handle_client(SOCKET client_sock) {
                     player.name = username;
                     player.id = client_id;
                     player.is_admin = is_admin;
+                    player.sock = client_sock;
                     bool player_exists = false;
                     for (auto& pair : game_state.players) {
                         if (pair.second.name == username) {
@@ -631,6 +987,7 @@ void handle_client(SOCKET client_sock) {
                     {
                         lock_guard<mutex> lock(game_mutex);
                         if (game_state.players.find(client_info[client_sock].second) != game_state.players.end()) {
+                            help_msg += "==================--   Player's   --================\n";
                             help_msg += "/move [direction] - Move (north, south, east, west)\n";
                             help_msg += "/attack [target_id] - Attack another player\n";
                             help_msg += "/defend - Defend yourself\n/skip - Skip your turn\n";
@@ -638,15 +995,42 @@ void handle_client(SOCKET client_sock) {
                             help_msg += "/ready - Mark yourself as ready\n/unready - Mark yourself as not ready\n";
                         }
                     }
-                    if (is_admin) {
-                        help_msg += "/kick [id] - Kick a client\n/name [new_name] - Change server name\n";
-                        help_msg += "/max [number] - Change max clients\n/info - Show server info\n";
-                        help_msg += "/clients - Show detailed client info\n/start_game - Start the game\n";
-                        help_msg += "/pause_game - Pause the game\n/set_turn_time [seconds] - Set turn duration\n";
-                        help_msg += "/end_turn - Force end current turn\n/save [filename] - Save game state\n";
-                        help_msg += "/load [filename] - Load game state\n";
+
+                    // ----- Динамические Lua-команды -----
+                    vector<string> lua_cmds;
+                    WIN32_FIND_DATAA findData;
+                    HANDLE hFind = FindFirstFileA("actions/*.lua", &findData);
+                    if (hFind != INVALID_HANDLE_VALUE) {
+                        do {
+                            string fname = findData.cFileName;
+                            size_t dot = fname.find_last_of('.');
+                            if (dot != string::npos) fname = fname.substr(0, dot);
+                            lua_cmds.push_back(fname);
+                        } while (FindNextFileA(hFind, &findData));
+                        FindClose(hFind);
                     }
-                    help_msg += "========================\n";
+                    if (!lua_cmds.empty()) {
+                        help_msg += "=- Dynamic (Lua) Commands -=\n";
+                        for (const auto& cmd : lua_cmds) {
+                            help_msg += "/" + cmd + "\n";
+                        }
+                    }
+                    if (is_admin) {
+                        help_msg += "=====--  Admin's  --=====\n";
+                        help_msg += "/kick [id] - Kick a client\n";
+                        help_msg += "/name[new_name] - Change server name\n";
+                        help_msg += "/max [number] - Change max clients\n";
+                        help_msg += "/info - Show server info\n";
+                        help_msg += "/clients - Show detailed client info\n";
+                        help_msg += "/start_game - Start the game\n";
+                        help_msg += "/pause_game - Pause the game\n";
+                        help_msg += "/set_turn_time[seconds] - Set turn duration\n";
+                        help_msg += "/end_turn - Force end current turn\n";
+                        help_msg += "/save[filename] - Save game state\n";
+                        help_msg += "/load [filename] - Load game state\n";
+                        help_msg += "/reload_scripts - Reload Lua actions\n";
+                    }
+                    help_msg += "====-----          -----====\n";
                     send(client_sock, help_msg.c_str(), static_cast<int>(help_msg.length()), 0);
                     continue;
                 }
@@ -662,7 +1046,6 @@ void handle_client(SOCKET client_sock) {
                                 if (game_state.players.find(info.second) != game_state.players.end()) {
                                     auto& player = game_state.players[info.second];
                                     list_msg += " | HP: " + to_string(player.hp) + "/" + to_string(player.max_hp);
-                                    list_msg += " | Level: " + to_string(player.level);
                                 }
                             }
                             list_msg += "\n";
@@ -887,7 +1270,7 @@ int main() {
         return 1;
     }
 
-    if (bind(server_sock, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+    if (::bind(server_sock, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
         cerr << "Bind failed: " << WSAGetLastError() << endl;
         cerr << "Make sure port " << PORT << " is available." << endl;
         closesocket(server_sock);
@@ -914,6 +1297,15 @@ int main() {
     cout << "Waiting for connections..." << endl;
     cout << "Press Ctrl+C to stop server" << endl;
     cout << "==========================\n" << endl;
+
+    gLuaState = luaL_newstate();
+    if (!gLuaState) {
+        cerr << "Failed to create Lua state" << endl;
+        return 1;
+    }
+    luaL_openlibs(gLuaState);   // открывает стандартные библиотеки Lua (math, string, table и т.д.)
+    register_lua_functions();
+    LoadLuaScripts();
 
     while (true) {
         sockaddr_in client_addr;
