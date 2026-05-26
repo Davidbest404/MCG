@@ -23,7 +23,7 @@
 
 using namespace std;
 
-int PORT = 8080;
+int SERVER_PORT = 8080;
 int LOCAL_PORT = 9090;
 
 atomic<bool> running(true);
@@ -117,19 +117,107 @@ enum class MessageType {
     MAP_UPDATE,
     STATUS_UPDATE,
     COMMAND_RESPONSE,
+    ERROR_RESPONSE,
     SYSTEM_MESSAGE
 };
 
+
 MessageType get_message_type(const string& message) {
-    if (message.find("=== Game Map ===") != string::npos || message.find("Position: (") != string::npos)
+    if (message.find("[MAP]") != string::npos)
         return MessageType::MAP_UPDATE;
-    else if (message.find("=== Your Status ===") != string::npos || message.find("Name: ") != string::npos || message.find("HP: ") != string::npos)
+    else if (message.find("[STATUS]") != string::npos)
         return MessageType::STATUS_UPDATE;
-    else if (message.find("[SERVER]") != string::npos || message.find("attacked") != string::npos || message.find("moved") != string::npos)
+    else if (message.find("[SERVER]") != string::npos)
         return MessageType::CHAT_MESSAGE;
-    else if (message.find("ERROR") != string::npos || message.find("OK") != string::npos)
+    else if (message.find("[COMMAND]") != string::npos)
+        return MessageType::COMMAND_RESPONSE;
+    else if (message.find("[ERROR]") != string::npos)
         return MessageType::COMMAND_RESPONSE;
     return MessageType::SYSTEM_MESSAGE;
+}
+
+/*
+Black - 0
+Blue - 1
+Green - 2
+Cyan - 3
+Red - 4
+Purple - 5
+Brown - 6
+Light gray - 7
+Dark gray - 8
+Light blue - 9
+Light green - 10
+Light blue - 11 - A
+Light red - 12 - B
+Light purple - 13 - C
+Yellow - 14 - E
+White - 15 - F
+Преобразует hex-символ (0-9, A-F, a-f) в число 0-15
+*/
+int hex_char_to_int(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    return -1;
+}
+
+void print_colored_text(const string& text) {
+    vector<int> text_stack = { 7 };  // текущий цвет текста
+    vector<int> bg_stack = { 0 };    // текущий цвет фона
+    size_t i = 0;
+    size_t len = text.length();
+
+    auto apply = [&]() {
+        ConsoleHelper::SetColor(text_stack.back(), bg_stack.back());
+        };
+
+    while (i < len) {
+        if (text[i] == '[' && i + 3 < len && text[i + 1] == 'c' && isxdigit(text[i + 2]) && text[i + 3] == ']') {
+            // Открывающий тег [cX]
+            int color = hex_char_to_int(text[i + 2]);
+            if (color != -1) {
+                text_stack.push_back(color);
+                apply();
+                i += 4;
+                continue;
+            }
+        }
+        else if (text[i] == '[' && i + 4 < len && text[i + 1] == '/' && text[i + 2] == 'c' && isxdigit(text[i + 3]) && text[i + 4] == ']') {
+            // Закрывающий тег [/cX]
+            if (text_stack.size() > 1) {
+                text_stack.pop_back();
+                apply();
+            }
+            i += 5;
+            continue;
+        }
+        else if (text[i] == '[' && i + 4 < len && text[i + 1] == 'b' && text[i + 2] == 'g' && isxdigit(text[i + 3]) && text[i + 4] == ']') {
+            // Открывающий тег [bgX]
+            int color = hex_char_to_int(text[i + 3]);
+            if (color != -1) {
+                bg_stack.push_back(color);
+                apply();
+                i += 5;
+                continue;
+            }
+        }
+        else if (text[i] == '[' && i + 5 < len && text[i + 1] == '/' && text[i + 2] == 'b' && text[i + 3] == 'g' && isxdigit(text[i + 4]) && text[i + 5] == ']') {
+            // Закрывающий тег [/bgX]
+            if (bg_stack.size() > 1) {
+                bg_stack.pop_back();
+                apply();
+            }
+            i += 6;
+            continue;
+        }
+
+        // Обычный символ
+        apply();
+        cout << text[i];
+        i++;
+    }
+    ConsoleHelper::ResetColor(); // сброс в консоли после всей строки
 }
 
 void print_to_main_console(const string& message, int color = 7, const string& prefix = "") {
@@ -150,16 +238,23 @@ void send_to_local_clients(const string& message, ClientType target_type = Clien
         }
     }
     if (!sent) {
-        int color = 7;
-        string prefix = "";
-        if (target_type == ClientType::CHAT_WINDOW) { color = 10; prefix = "[CHAT] "; }
-        else if (target_type == ClientType::MAP_WINDOW) { color = 14; prefix = "[MAP]\n"; }
-        else if (target_type == ClientType::STATUS_WINDOW) { color = 11; prefix = "[STATUS]\n"; }
-        string clean_message = message;
-        if (clean_message.find("[CHAT] ") == 0) clean_message = clean_message.substr(7);
-        else if (clean_message.find("[MAP]\n") == 0) clean_message = clean_message.substr(6);
-        else if (clean_message.find("[STATUS]\n") == 0) clean_message = clean_message.substr(9);
-        print_to_main_console(prefix + clean_message, color);
+        if (target_type == ClientType::CHAT_WINDOW) {
+            cout << "[CHAT] ";
+            print_colored_text(message);
+        }
+        else if (target_type == ClientType::MAP_WINDOW) {
+            cout << "[MAP]\n";
+            print_colored_text(message);
+        }
+        else if (target_type == ClientType::STATUS_WINDOW) {
+            cout << "[STATUS]\n";
+            print_colored_text(message);
+        }
+        else {
+            print_colored_text(message);
+        }
+        ConsoleHelper::ResetColor(); // <--- Сброс цвета после вывода
+        if (!message.empty() && message.back() != '\n') cout << '\n';
     }
 }
 
@@ -168,19 +263,17 @@ void process_game_message(const string& message) {
     MessageType type = get_message_type(message);
     switch (type) {
     case MessageType::CHAT_MESSAGE:
-        send_to_local_clients("[CHAT] " + message, ClientType::CHAT_WINDOW);
+        send_to_local_clients(message, ClientType::CHAT_WINDOW);
         break;
     case MessageType::MAP_UPDATE:
-        send_to_local_clients("[MAP]\n" + message, ClientType::MAP_WINDOW);
+        send_to_local_clients(message, ClientType::MAP_WINDOW);
         break;
     case MessageType::STATUS_UPDATE:
-        send_to_local_clients("[STATUS]\n" + message, ClientType::STATUS_WINDOW);
-        break;
-    case MessageType::COMMAND_RESPONSE:
-        send_to_local_clients("[RESPONSE] " + message, ClientType::CHAT_WINDOW);
+        send_to_local_clients(message, ClientType::STATUS_WINDOW);
         break;
     default:
-        send_to_local_clients("[SYSTEM] " + message, ClientType::CHAT_WINDOW);
+        send_to_local_clients(message, ClientType::CHAT_WINDOW);
+        break;
     }
 }
 
@@ -202,7 +295,7 @@ void receive_from_game_server() {
     }
 }
 
-bool connect_to_game_server(const string& ip_address) {
+bool connect_to_game_server(const string& ip_address, int& port) {
     game_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (game_socket == INVALID_SOCKET) {
         print_to_main_console("[ERROR] Failed to create socket\n", 6);
@@ -211,20 +304,20 @@ bool connect_to_game_server(const string& ip_address) {
     sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(GAME_PORT);
+    server_addr.sin_port = htons(port);
     server_addr.sin_addr.s_addr = inet_addr(ip_address.c_str());
     if (server_addr.sin_addr.s_addr == INADDR_NONE) {
         if (ip_address == "localhost" || ip_address == "127.0.0.1") {
             server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         }
         else {
-            print_to_main_console("[ERROR] Invalid IP address: " + ip_address + "\n", 4);
+            print_to_main_console("[ERROR] Invalid IP address or port: " + ip_address + to_string(port) + "\n", 4);
             closesocket(game_socket);
             game_socket = INVALID_SOCKET;
             return false;
         }
     }
-    print_to_main_console("[SYSTEM] Connecting to game server at " + ip_address + "...\n", 10);
+    print_to_main_console("[SYSTEM] Connecting to game server at " + ip_address + ":" + to_string(port) + "...\n", 10);
     if (connect(game_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         print_to_main_console("[ERROR] Connection failed. Make sure server is running.\n", 4);
         closesocket(game_socket);
@@ -240,6 +333,7 @@ bool connect_to_game_server(const string& ip_address) {
     return true;
 }
 
+/*
 bool authenticate_on_game_server(const string& username, const string& password) {
     string auth_msg = "AUTH|" + username + "|" + password;
     if (!safe_send(game_socket, auth_msg)) {
@@ -254,6 +348,7 @@ bool authenticate_on_game_server(const string& username, const string& password)
     process_game_message(response);
     return true;
 }
+*/
 
 void local_server() {
     SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -266,16 +361,16 @@ void local_server() {
     server_addr.sin_port = htons(LOCAL_PORT);
     server_addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(server_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        cerr << "[ERROR] Failed to bind local server to port " << LOCAL_PORT << endl;
+        cerr << "\n[ERROR] Failed to bind local server to port " << LOCAL_PORT << endl;
         closesocket(server_socket);
         return;
     }
     if (listen(server_socket, 5) < 0) {
-        cerr << "[ERROR] Failed to listen on port " << LOCAL_PORT << endl;
+        cerr << "\n[ERROR] Failed to listen on port " << LOCAL_PORT << endl;
         closesocket(server_socket);
         return;
     }
-    cout << "[SYSTEM] Local server started on port " << LOCAL_PORT << endl;
+    cout << "\n[SYSTEM] Local server started on port " << LOCAL_PORT << endl;
     local_server_running = true;
     while (running && local_server_running) {
         sockaddr_in client_addr;
@@ -311,7 +406,7 @@ void local_server() {
             lock_guard<mutex> lock(local_clients_mutex);
             local_clients.push_back(new_client);
         }
-        cout << "[SYSTEM] " << new_client.name << " connected" << endl;
+        cout << "\n[SYSTEM] " << new_client.name << " connected" << endl;
         string welcome = "=== Connected to MCG Client ===\nWindow: " + new_client.name + "\n";
         welcome += "You will receive relevant updates here.\n==================================\n\n";
         safe_send(client_socket, welcome);
@@ -332,11 +427,35 @@ void cleanup_local_clients() {
     local_clients.clear();
 }
 
+bool is_valid_ip(const string& ip) {
+    if (ip == "localhost" || ip == "127.0.0.1") return true;
+    // Попробуем преобразовать строку в IPv4-адрес
+    struct in_addr addr;
+    int result = inet_pton(AF_INET, ip.c_str(), &addr);
+    return result == 1;
+}
+
+bool is_valid_port(const string& port_str, int& port_out) {
+    if (port_str.empty()) return false;
+    try {
+        size_t pos;
+        int port = stoi(port_str, &pos);
+        // Проверяем, что вся строка была использована и порт в допустимом диапазоне
+        if (pos != port_str.length()) return false;
+        if (port < 1 || port > 65535) return false;
+        port_out = port;
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+}
+
 void command_input_loop() {
     string input;
     print_to_main_console("Type 'help' for commands or 'windows' for window setup instructions.\n", 6);
     while (running) {
-        cout << "MCG Client> ";
+        ConsoleHelper::ResetColor();
         getline(cin, input);
         if (input.empty()) continue;
         if (input == "exit" || input == "quit") {
@@ -345,25 +464,40 @@ void command_input_loop() {
         }
         else if (input == "connect") {
             if (connected_to_game) {
-                print_to_main_console("[ERROR] Already connected to game server. Disconnect first.\n", 6);
+                print_to_main_console("\n[ERROR] Already connected to game server. Disconnect first.\n", 6);
                 continue;
             }
             string ip, username, password;
+            int port;
             cout << "Server IP [127.0.0.1]: ";
             getline(cin, ip);
             if (ip.empty()) ip = "127.0.0.1";
-            cout << "Username: ";
-            getline(cin, username);
-            if (username.empty()) {
-                cout << "[ERROR] Username cannot be empty\n";
+            // Проверка IP
+            if (!is_valid_ip(ip)) {
+                print_to_main_console("\n[ERROR] Invalid IP address format.\n", 4);
                 continue;
             }
-            cout << "Config password: ";
+
+            cout << "\nServer port [" << SERVER_PORT << "]: ";
+            string portStr;
+            getline(cin, portStr);
+            if (portStr.empty()) {
+                port = SERVER_PORT;
+            }
+            else {
+                if (!is_valid_port(portStr, port)) {
+                    print_to_main_console("\n[ERROR] Invalid port number (must be 1-65535).\n", 4);
+                    continue;
+                }
+            }
+
             getline(cin, password);
-            if (connect_to_game_server(ip)) {
-                if (authenticate_on_game_server(username, password)) {
+            if (connect_to_game_server(ip, port)) {
+                string response = safe_receive(game_socket, 3000);
+                if (response.empty() || response.find("OK") == string::npos) {
                     thread receive_thread(receive_from_game_server);
                     receive_thread.detach();
+                    process_game_message(response);
                 }
                 else {
                     closesocket(game_socket);
@@ -377,10 +511,10 @@ void command_input_loop() {
                 game_socket = INVALID_SOCKET;
                 connected_to_game = false;
                 send_to_local_clients("[SYSTEM] Disconnected from game server", ClientType::CHAT_WINDOW);
-                cout << "[SYSTEM] Disconnected from game server\n";
+                cout << "\n[SYSTEM] Disconnected from game server\n";
             }
             else {
-                cout << "[ERROR] Not connected to game server\n";
+                cout << "\n[ERROR] Not connected to game server\n";
             }
         }
         else if (input == "windows") {
@@ -441,78 +575,92 @@ void command_input_loop() {
         }
         else if (input.find("send ") == 0) {
             if (!connected_to_game) {
-                cout << "[ERROR] Not connected to game server!\n";
+                cout << "\n[ERROR] Not connected to game server!\n";
                 continue;
             }
             string command = input.substr(5);
             if (command.empty()) {
-                cout << "[ERROR] No command specified\n";
+                cout << "\n[ERROR] No command specified\n";
                 continue;
             }
             if (safe_send(game_socket, command)) {
-                cout << "[INFO] Command sent: " << command << endl;
-                send_to_local_clients("[COMMAND] Sent: " + command, ClientType::CHAT_WINDOW);
             }
             else {
-                cout << "[ERROR] Failed to send command\n";
+                cout << "\n[ERROR] Failed to send command\n";
             }
         }
         else if (input.find("status") == 0) {
             if (!connected_to_game) {
-                cout << "[ERROR] Not connected to game server!\n";
+                cout << "\n[ERROR] Not connected to game server!\n";
                 continue;
             }
             if (safe_send(game_socket, input)) {
-                cout << "[INFO] Status request sent\n";
             }
             else {
-                cout << "[ERROR] Failed to send status request\n";
+                cout << "\n[ERROR] Failed to send status request\n";
             }
         }
         else if (input == "map") {
             if (!connected_to_game) {
-                cout << "[ERROR] Not connected to game server!\n";
+                cout << "\n[ERROR] Not connected to game server!\n";
                 continue;
             }
             if (safe_send(game_socket, "/map")) {
-                cout << "[INFO] Map request sent\n";
             }
             else {
-                cout << "[ERROR] Failed to send map request\n";
+                cout << "\n[ERROR] Failed to send map request\n";
             }
         }
         else {
-            cout << "[ERROR] Unknown command. Type 'help' for available commands.\n";
+            cout << "\n[ERROR] Unknown command. Type 'help' for available commands.\n";
         }
     }
 }
 
 int main() {
     ConsoleHelper::InitConsole();
+    ConsoleHelper::SetColor(15, 1); // белый текст на синем фоне
+    cout << "[DEBUG] " << endl;
+    ConsoleHelper::ResetColor();
     //------------
     int LPort;
-    cin >> LPort;
-    if (LPort == NULL)
-    {
+    string S_LPort;
+    getline(cin, S_LPort);
+    if (S_LPort.empty()) {
         LPort = LOCAL_PORT;
     }
-    int Port;
-    cin >> Port;
-    if (Port == NULL)
-    {
-        Port = PORT;
+    else {
+        if (!is_valid_port(S_LPort, LPort)) {
+            cerr << "\n[ERROR] Invalid local port. Using default " << LOCAL_PORT << "\n";
+            LPort = LOCAL_PORT;
+        }
     }
+    LOCAL_PORT = LPort;
+
+    int Port;
+    string S_Port;
+    getline(cin, S_Port);
+    if (S_Port.empty()) {
+        Port = SERVER_PORT;
+    }
+    else {
+        if (!is_valid_port(S_Port, Port)) {
+            cerr << "\n[ERROR] Invalid server port. Using default " << SERVER_PORT << "\n";
+            Port = SERVER_PORT;
+        }
+    }
+    SERVER_PORT = Port;
     //------------
     system("cls");
     cout << "=== MCG Multi-Window Client (Windows) ===\n";
     cout << "Local server port: " << LOCAL_PORT << "\n";
-    cout << "Game server port: " << Port << "\n";
+    cout << "Game server port: " << SERVER_PORT << "\n";
     cout << "===============================\n\n";
     cout << "Note: If you don't open separate windows, all information\n";
     cout << "will be displayed directly in this console.\n";
     cout << "Use 'windows' command to see how to open separate windows.\n\n";
     if (!network_init()) {
-        cerr << "[FATAL] Network initialization failed!\n";
+        cerr << "\n[FATAL] Network initialization failed!\n";
         return 1;
     }
     thread server_thread(local_server);

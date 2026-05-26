@@ -60,6 +60,25 @@ public:
         SetConsoleTextAttribute(hStdOut, (WORD)((bgColor << 4) | textColor));
     }
 };
+/*
+Black - 0
+Blue - 1
+Green - 2
+Cyan - 3
+Red - 4
+Purple - 5
+Brown - 6
+Light gray - 7
+Dark gray - 8
+Light blue - 9
+Light green - 10
+Light blue - 11 - A
+Light red - 12 - B
+Light purple - 13 - C
+Yellow - 14 - E
+White - 15 - F
+Преобразует hex-символ (0-9, A-F, a-f) в число 0-15
+*/
 
 enum class ActionType {
     MOVE,
@@ -85,7 +104,7 @@ public:
     int y = 0;
 
     // Динамические атрибуты
-    unordered_map<string, variant<int, float, string, bool, ActionType>> attrs;
+    unordered_map<string, variant<int, float, string, bool>> attrs;
 
     template<typename T>
     T getAttr(const string& key, const T& defaultValue = {}) const {
@@ -95,14 +114,14 @@ public:
         return defaultValue;
     }
 
-    void setAttr(const string& key, const variant<int, float, string, bool, ActionType>& value) {
+    void setAttr(const string& key, const variant<int, float, string, bool>& value) {
         attrs[key] = value;
     }
 
     bool hasAttr(const string& key) const { return attrs.count(key); }
     void removeAttr(const string& key) { attrs.erase(key); }
-};
 
+};
 struct GameState {
     bool is_active = false;
     time_t turn_start_time;
@@ -118,10 +137,28 @@ map<SOCKET, pair<string, int>> client_info;
 map<SOCKET, bool> admin_clients;
 atomic<int> next_client_id(1);
 string Password = "null";
-string Name = "Chat";
+string Name = "Player";
 int max_clients = 10;
 GameState game_state;
 mutex game_mutex;
+// Атрибуты по умолчанию для новых игроков
+unordered_map<string, variant<int, float, string, bool>> default_attrs;
+mutex default_attrs_mutex;  // для потокобезопасности (опционально, но для порядка)
+
+void apply_default_attrs(Player& player) {
+    lock_guard<mutex> lock(default_attrs_mutex);
+    for (const auto& [key, val] : default_attrs) {
+        player.setAttr(key, val);
+    }
+}
+
+// Удаление атрибута у всех игроков
+void remove_attr_from_all(const string& attr_name) {
+    lock_guard<mutex> lock(game_mutex);
+    for (auto& [id, player] : game_state.players) {
+        player.removeAttr(attr_name);
+    }
+}
 
 // Прототипы
 void broadcast_message(const string& message, SOCKET sender);
@@ -432,7 +469,8 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             return;
         }
         auto& player = game_state.players[player_id];
-        string status = "\n=== Your Status ===\n";
+        string status = "\n[STATUS]\n";
+        status = "[cA][bg1]=== Your Status ===[/bg1][/cA]\n";
         status += "Name: " + player.name + "\n";
         status += "HP: " + to_string(player.hp) + "/" + to_string(player.max_hp) + "\n";
         status += "Position: (" + to_string(player.x) + "," + to_string(player.y) + ")\n";
@@ -441,7 +479,8 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         send(client_sock, status.c_str(), static_cast<int>(status.length()), 0);
     }
     else if (cmd == "map") {
-        string map = "\n=== Game Map ===\n";
+        string map = "\n[MAP]\n";
+        map = "[c1][bg4] === Game Map === [/bg4][/c1]\n";
         for (int y = 5; y >= -5; y--) {
             for (int x = -5; x <= 5; x++) {
                 bool has_player = false;
@@ -514,6 +553,312 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     }
 }
 
+// ========== ОБРАБОТЧИКИ КОМАНД АТРИБУТОВ ==========
+
+// Установка атрибута у всех текущих игроков
+void set_attr_for_all(const string& attr_name, const variant<int, float, string, bool>& value) {
+    lock_guard<mutex> lock(game_mutex);
+    for (auto& [id, player] : game_state.players) {
+        player.setAttr(attr_name, value);
+    }
+}
+
+// Преобразование строки в variant с автоопределением типа
+variant<int, float, string, bool> parse_value(const string& value_str) {
+    string low = value_str;
+    transform(low.begin(), low.end(), low.begin(), ::tolower);
+    if (low == "true") return true;
+    if (low == "false") return false;
+
+    char* end = nullptr;
+    long long ival = strtoll(value_str.c_str(), &end, 10);
+    if (*end == '\0') return (int)ival;
+
+    double dval = strtod(value_str.c_str(), &end);
+    if (*end == '\0') return (float)dval;
+
+    return value_str; // строка
+}
+
+// Команда /set_attr_all <attr_name> <value>
+void handle_set_attr_all(SOCKET client_sock, const string& command) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "set_attr_all"
+    string attr_name, value_str;
+    if (!(iss >> attr_name >> value_str)) {
+        string err = "[ERROR]|Usage: /set_attr_all <attr_name> <value>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    auto var_value = parse_value(value_str);
+    set_attr_for_all(attr_name, var_value);
+    string ok = "Attribute '" + attr_name + "' set for all current players.\n";
+    send(client_sock, ok.c_str(), (int)ok.size(), 0);
+}
+
+// /set_attr <target_id> <attr_name> <value>
+void handle_set_attr(SOCKET client_sock, const string& command, int caller_id, bool is_admin) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "set_attr"
+    int target_id;
+    string attr_name, value_str;
+    if (!(iss >> target_id >> attr_name >> value_str)) {
+        string err = "[ERROR]|Usage: /set_attr <target_id> <attr_name> <value>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(target_id);
+    if (it == game_state.players.end()) {
+        string err = "[ERROR]|Player not found\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    if (target_id != caller_id && !is_admin) {
+        string err = "[ERROR]|You can only modify your own attributes\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    auto var_value = parse_value(value_str);
+    it->second.setAttr(attr_name, var_value);
+    string ok = "Attribute '" + attr_name + "' set for player " + to_string(target_id) + "\n";
+    send(client_sock, ok.c_str(), (int)ok.size(), 0);
+}
+
+// /get_attr <target_id> <attr_name>
+void handle_get_attr(SOCKET client_sock, const string& command) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "get_attr"
+    int target_id;
+    string attr_name;
+    if (!(iss >> target_id >> attr_name)) {
+        string err = "[ERROR]|Usage: /get_attr <target_id> <attr_name>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(target_id);
+    if (it == game_state.players.end()) {
+        string err = "[ERROR]|Player not found\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    if (!it->second.hasAttr(attr_name)) {
+        string err = "[ERROR]|Attribute '" + attr_name + "' not found\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    string result = "Player " + to_string(target_id) + " (" + it->second.name + ") attribute '" + attr_name + "' = ";
+    const auto& val = it->second.attrs[attr_name];
+    if (holds_alternative<int>(val)) result += to_string(get<int>(val));
+    else if (holds_alternative<float>(val)) result += to_string(get<float>(val));
+    else if (holds_alternative<string>(val)) result += "\"" + get<string>(val) + "\"";
+    else if (holds_alternative<bool>(val)) result += (get<bool>(val) ? "true" : "false");
+    result += "\n";
+    send(client_sock, result.c_str(), (int)result.size(), 0);
+}
+
+// /has_attr <target_id> <attr_name>
+void handle_has_attr(SOCKET client_sock, const string& command) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "has_attr"
+    int target_id;
+    string attr_name;
+    if (!(iss >> target_id >> attr_name)) {
+        string err = "[ERROR]|Usage: /has_attr <target_id> <attr_name>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(target_id);
+    if (it == game_state.players.end()) {
+        string err = "[ERROR]|Player not found\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    bool exists = it->second.hasAttr(attr_name);
+    string result = "Player " + to_string(target_id) + " (" + it->second.name + ") " +
+        (exists ? "has" : "does not have") + " attribute '" + attr_name + "'\n";
+    send(client_sock, result.c_str(), (int)result.size(), 0);
+}
+
+// /remove_attr <target_id> <attr_name>
+void handle_remove_attr(SOCKET client_sock, const string& command, int caller_id, bool is_admin) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "remove_attr"
+    int target_id;
+    string attr_name;
+    if (!(iss >> target_id >> attr_name)) {
+        string err = "[ERROR]|Usage: /remove_attr <target_id> <attr_name>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(target_id);
+    if (it == game_state.players.end()) {
+        string err = "[ERROR]|Player not found\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    if (target_id != caller_id && !is_admin) {
+        string err = "[ERROR]|You can only remove your own attributes\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    if (!it->second.hasAttr(attr_name)) {
+        string err = "[ERROR]|Attribute '" + attr_name + "' not found\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    it->second.removeAttr(attr_name);
+    string ok = "Attribute '" + attr_name + "' removed from player " + to_string(target_id) + "\n";
+    send(client_sock, ok.c_str(), (int)ok.size(), 0);
+}
+
+// Команда /remove_attr_all <attr_name>
+void handle_remove_attr_all(SOCKET client_sock, const string& command) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "remove_attr_all"
+    string attr_name;
+    if (!(iss >> attr_name)) {
+        string err = "[ERROR]|Usage: /remove_attr_all <attr_name>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    remove_attr_from_all(attr_name);
+    string ok = "Attribute '" + attr_name + "' removed from all players.\n";
+    send(client_sock, ok.c_str(), (int)ok.size(), 0);
+}
+
+void handle_default_attr_add(SOCKET client_sock, const string& command) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "default_attr_add"
+    string attr_name, value_str;
+    if (!(iss >> attr_name >> value_str)) {
+        string err = "[ERROR]|Usage: /default_attr_add <attr_name> <value>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    auto var_value = parse_value(value_str);
+    {
+        lock_guard<mutex> lock(default_attrs_mutex);
+        default_attrs[attr_name] = var_value;
+    }
+    string ok = "Default attribute '" + attr_name + "' set for all future players.\n";
+    send(client_sock, ok.c_str(), (int)ok.size(), 0);
+}
+
+void handle_default_attr_remove(SOCKET client_sock, const string& command) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "default_attr_remove"
+    string attr_name;
+    if (!(iss >> attr_name)) {
+        string err = "[ERROR]|Usage: /default_attr_remove <attr_name>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    {
+        lock_guard<mutex> lock(default_attrs_mutex);
+        auto it = default_attrs.find(attr_name);
+        if (it == default_attrs.end()) {
+            string err = "[ERROR]|Default attribute '" + attr_name + "' not found.\n";
+            send(client_sock, err.c_str(), (int)err.size(), 0);
+            return;
+        }
+        default_attrs.erase(it);
+    }
+    string ok = "Default attribute '" + attr_name + "' removed.\n";
+    send(client_sock, ok.c_str(), (int)ok.size(), 0);
+}
+
+void handle_default_attr_list(SOCKET client_sock) {
+    lock_guard<mutex> lock(default_attrs_mutex);
+    if (default_attrs.empty()) {
+        string msg = "No default attributes set for future players.\n";
+        send(client_sock, msg.c_str(), (int)msg.size(), 0);
+        return;
+    }
+    string msg = "\n=== Default attributes (applied to new players) ===\n";
+    for (const auto& [key, val] : default_attrs) {
+        msg += key + " : ";
+        if (holds_alternative<int>(val)) msg += "int = " + to_string(get<int>(val));
+        else if (holds_alternative<float>(val)) msg += "float = " + to_string(get<float>(val));
+        else if (holds_alternative<string>(val)) msg += "string = \"" + get<string>(val) + "\"";
+        else if (holds_alternative<bool>(val)) msg += "bool = " + string(get<bool>(val) ? "true" : "false");
+        msg += "\n";
+    }
+    msg += "==================================================\n";
+    send(client_sock, msg.c_str(), (int)msg.size(), 0);
+}
+
+// Синхронизировать атрибуты по умолчанию со всеми существующими игроками
+void handle_sync_default_attrs(SOCKET client_sock) {
+    // Блокируем оба мьютекса (порядок важен: сначала default_attrs, потом game_state)
+    lock_guard<mutex> lock_def(default_attrs_mutex);
+    lock_guard<mutex> lock_game(game_mutex);
+
+    if (default_attrs.empty()) {
+        string msg = "No default attributes set. Nothing to sync.\n";
+        send(client_sock, msg.c_str(), (int)msg.size(), 0);
+        return;
+    }
+
+    int updated_count = 0;
+    for (auto& [id, player] : game_state.players) {
+        // Для каждого атрибута по умолчанию – перезаписываем (или добавляем)
+        for (const auto& [key, val] : default_attrs) {
+            player.setAttr(key, val);
+        }
+        updated_count++;
+    }
+
+    string msg = "Default attributes synchronized to " + to_string(updated_count) + " existing players.\n";
+    send(client_sock, msg.c_str(), (int)msg.size(), 0);
+}
+
+// /list_attrs [target_id]  — если target_id не указан, то для себя
+void handle_list_attrs(SOCKET client_sock, const string& command, int caller_id) {
+    istringstream iss(command.substr(1));
+    string cmd;
+    iss >> cmd; // "list_attrs"
+    int target_id = caller_id; // по умолчанию свой
+    if (!(iss >> target_id)) {
+        // не указан — оставляем caller_id
+    }
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(target_id);
+    if (it == game_state.players.end()) {
+        string err = "[ERROR]|Player not found\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    Player& p = it->second;
+    if (p.attrs.empty()) {
+        string msg = "Player " + to_string(target_id) + " (" + p.name + ") has no attributes.\n";
+        send(client_sock, msg.c_str(), (int)msg.size(), 0);
+        return;
+    }
+    string msg = "\n=== Attributes of " + p.name + " (ID:" + to_string(target_id) + ") ===\n";
+    for (const auto& [key, val] : p.attrs) {
+        msg += key + " : ";
+        if (holds_alternative<int>(val)) msg += "int = " + to_string(get<int>(val));
+        else if (holds_alternative<float>(val)) msg += "float = " + to_string(get<float>(val));
+        else if (holds_alternative<string>(val)) msg += "string = \"" + get<string>(val) + "\"";
+        else if (holds_alternative<bool>(val)) msg += "bool = " + string(get<bool>(val) ? "true" : "false");
+        msg += "\n";
+    }
+    msg += "===================================\n";
+    send(client_sock, msg.c_str(), (int)msg.size(), 0);
+}
+
 void save_game_state(const string& filename) {
     ofstream file(filename);
     if (!file.is_open()) {
@@ -555,9 +900,6 @@ void save_game_state(const string& filename) {
             }
             else if (holds_alternative<bool>(attr.second)) {
                 file << " bool " << (get<bool>(attr.second) ? 1 : 0);
-            }
-            else if (holds_alternative<ActionType>(attr.second)) {
-                file << " ActionType " << (int)get<ActionType>(attr.second);
             }
         }
         file << endl;
@@ -628,10 +970,6 @@ void load_game_state(const string& filename) {
                 int val; file >> val;
                 player.setAttr(key, (bool)val);
             }
-            else if (typeStr == "ActionType") {
-                int val; file >> val;
-                player.setAttr(key, static_cast<ActionType>(val));
-            }
             else {
                 cerr << "Unknown attribute type: " << typeStr << ", skipping key " << key << endl;
                 // Пропускаем до конца строки (можно просто читать строку, но упростим)
@@ -670,7 +1008,7 @@ void auto_save_thread() {
     while (true) {
         this_thread::sleep_for(chrono::minutes(15));
         if (game_state.is_active) {
-            save_game_state("autosave.rpg");
+            save_game_state("autosave.mcgsave");
             ConsoleHelper::SetColor(10);
             cout << "Auto-save completed" << endl;
             ConsoleHelper::SetColor(8);
@@ -827,8 +1165,6 @@ int lua_get_attr(lua_State* L) {
                 lua_pushstring(L, get<string>(ait->second).c_str());
             else if (holds_alternative<bool>(ait->second))
                 lua_pushboolean(L, get<bool>(ait->second));
-            else if (holds_alternative<ActionType>(ait->second))
-                lua_pushinteger(L, static_cast<int>(get<ActionType>(ait->second)));
             else
                 lua_pushnil(L);
         }
@@ -953,6 +1289,7 @@ void handle_client(SOCKET client_sock) {
                     player.id = client_id;
                     player.is_admin = is_admin;
                     player.sock = client_sock;
+                    apply_default_attrs(player);
                     bool player_exists = false;
                     for (auto& pair : game_state.players) {
                         if (pair.second.name == username) {
@@ -968,7 +1305,7 @@ void handle_client(SOCKET client_sock) {
             }
         }
         if (!authenticated) {
-            string error = "ERROR|Invalid format. Use: AUTH|username|password\n";
+            string error = "[ERROR]|Invalid format. Use: AUTH|username|password\n";
             send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
         }
     }
@@ -982,7 +1319,8 @@ void handle_client(SOCKET client_sock) {
         if (!message.empty()) {
             if (message[0] == '/') {
                 if (message == "/help") {
-                    string help_msg = "\n=== Available Commands ===\n";
+                    string help_msg = "\n[COMMAND]\n";
+                    help_msg = "\n[c2][bgC]=== Available Commands ===[/bgC][/c2]\n";
                     help_msg += "/help - Show this message\n/list - List all connected clients\n";
                     {
                         lock_guard<mutex> lock(game_mutex);
@@ -1010,7 +1348,7 @@ void handle_client(SOCKET client_sock) {
                         FindClose(hFind);
                     }
                     if (!lua_cmds.empty()) {
-                        help_msg += "=- Dynamic (Lua) Commands -=\n";
+                        help_msg += "===--- Dynamic (Lua) Commands ---===\n";
                         for (const auto& cmd : lua_cmds) {
                             help_msg += "/" + cmd + "\n";
                         }
@@ -1029,6 +1367,19 @@ void handle_client(SOCKET client_sock) {
                         help_msg += "/save[filename] - Save game state\n";
                         help_msg += "/load [filename] - Load game state\n";
                         help_msg += "/reload_scripts - Reload Lua actions\n";
+                        help_msg += "/add_item - add item\n";
+                        help_msg += "/set_hp [target_id] [hp] - set HP to choosen target (if setted HP > then max HP of target it would change to max)\n";
+                        help_msg += "/set_attr_all <attr_name> <value> - set attribute for ALL current players\n";
+                        help_msg += "/set_attr <target_id> <attr_name> <value> - set attribute for specific player\n";
+                        help_msg += "/get_attr <target_id> <attr_name> - get attribute value\n";
+                        help_msg += "/has_attr <target_id> <attr_name> - check if attribute exists\n";
+                        help_msg += "/remove_attr <target_id> <attr_name> - remove attribute from specific player\n";
+                        help_msg += "/remove_attr_all <attr_name> - remove attribute from ALL players\n";
+                        help_msg += "/default_attr_add <attr_name> <value> - add/modify default attribute for future players\n";
+                        help_msg += "/default_attr_remove <attr_name> - remove default attribute\n";
+                        help_msg += "/default_attr_list - list all default attributes\n";
+                        help_msg += "/sync_default_attrs - apply current default attributes to all existing players\n";
+                        help_msg += "/list_attrs [target_id] - list all attributes of a player (default: yourself)\n";
                     }
                     help_msg += "====-----          -----====\n";
                     send(client_sock, help_msg.c_str(), static_cast<int>(help_msg.length()), 0);
@@ -1072,19 +1423,19 @@ void handle_client(SOCKET client_sock) {
                                         break;
                                     }
                                     else {
-                                        string error = "ERROR|Cannot kick another admin\n";
+                                        string error = "[ERROR]|Cannot kick another admin\n";
                                         send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
                                         found = true;
                                     }
                                 }
                             }
                             if (!found) {
-                                string error = "ERROR|Client not found\n";
+                                string error = "[ERROR]|Client not found\n";
                                 send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
                             }
                         }
                         catch (...) {
-                            string error = "ERROR|Invalid client ID\n";
+                            string error = "[ERROR]|Invalid client ID\n";
                             send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
                         }
                         continue;
@@ -1104,12 +1455,12 @@ void handle_client(SOCKET client_sock) {
                                 broadcast_message(notify, INVALID_SOCKET);
                             }
                             else {
-                                string error = "ERROR|Max clients must be between 1 and 1000\n";
+                                string error = "[ERROR]|Max clients must be between 1 and 1000\n";
                                 send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
                             }
                         }
                         catch (...) {
-                            string error = "ERROR|Invalid number\n";
+                            string error = "[ERROR]|Invalid number\n";
                             send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
                         }
                         continue;
@@ -1160,7 +1511,7 @@ void handle_client(SOCKET client_sock) {
                             broadcast_message("Turn duration set to " + to_string(seconds / 60) + " minutes.", INVALID_SOCKET);
                         }
                         catch (...) {
-                            string error = "ERROR|Invalid number\n";
+                            string error = "[ERROR]|Invalid number\n";
                             send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
                         }
                         continue;
@@ -1183,6 +1534,50 @@ void handle_client(SOCKET client_sock) {
                         send(client_sock, "Loading game...\n", 16, 0);
                         continue;
                     }
+                    else if (message.substr(0, 13) == "/set_attr_all") {
+                        handle_set_attr_all(client_sock, message);
+                        continue;
+                    }
+                    else if (message.substr(0, 9) == "/set_attr") {
+                        handle_set_attr(client_sock, message, client_info[client_sock].second, is_admin);
+                        continue;
+                    }
+                    else if (message.substr(0, 9) == "/get_attr") {
+                        handle_get_attr(client_sock, message);
+                        continue;
+                    }
+                    else if (message.substr(0, 9) == "/has_attr") {
+                        handle_has_attr(client_sock, message);
+                        continue;
+                    }
+                    else if (message.substr(0, 16) == "/remove_attr_all") {
+                        handle_remove_attr_all(client_sock, message);
+                        continue;
+                    }
+                    else if (message.substr(0, 11) == "/remove_attr") {
+                        handle_remove_attr(client_sock, message, client_info[client_sock].second, is_admin);
+                        continue;
+                    }
+                    else if (message.substr(0, 17) == "/default_attr_add") {
+                        handle_default_attr_add(client_sock, message);
+                        continue;
+                    }
+                    else if (message.substr(0, 20) == "/default_attr_remove") {
+                        handle_default_attr_remove(client_sock, message);
+                        continue;
+                        }
+                    else if (message.substr(0, 17) == "/default_attr_list") {
+                        handle_default_attr_list(client_sock);
+                        continue;
+                    }
+                    else if (message == "/sync_default_attrs") {
+                        handle_sync_default_attrs(client_sock);
+                        continue;
+                    }
+                    else if (message.substr(0, 11) == "/list_attrs") {
+                        handle_list_attrs(client_sock, message, client_info[client_sock].second);
+                        continue;
+                    }
                 }
                 int player_id = client_info[client_sock].second;
                 {
@@ -1191,7 +1586,7 @@ void handle_client(SOCKET client_sock) {
                         continue;
                     }
                 }
-                string error = "ERROR|Unknown command. Type /help for available commands\n";
+                string error = "[ERROR]|Unknown command. Type /help for available commands\n";
                 send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
                 continue;
             }
@@ -1240,9 +1635,9 @@ int main() {
     cin >> load_choice;
     if (load_choice == 'y' || load_choice == 'Y') {
         string save_file;
-        cout << "Enter save file name (default: game_save.rpg): ";
+        cout << "Enter save file name (default: game_save.mcgsave): ";
         cin >> save_file;
-        if (save_file.empty()) save_file = "game_save.rpg";
+        if (save_file.empty()) save_file = "game_save.mcgsave";
         load_game_state(save_file);
         thread(auto_save_thread).detach();
     }
@@ -1316,7 +1711,7 @@ int main() {
             continue;
         }
         if (client_count >= max_clients) {
-            string error = "ERROR|Server is full. Max: " + to_string(max_clients);
+            string error = "[ERROR]|Server is full. Max: " + to_string(max_clients);
             send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
             closesocket(client_sock);
             cout << "Connection rejected: server full (" << max_clients << " clients)" << endl;
