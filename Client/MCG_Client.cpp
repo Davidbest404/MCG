@@ -490,6 +490,12 @@ void command_input_loop() {
 int main() {
     ConsoleHelper::InitConsole();
     //------------
+    int LPort;
+    cin >> LPort;
+    if (LPort == NULL)
+    {
+        LPort = LOCAL_PORT;
+    }
     int Port;
     cin >> Port;
     if (Port == NULL)
