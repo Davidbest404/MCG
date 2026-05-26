@@ -23,8 +23,8 @@
 
 using namespace std;
 
-const int GAME_PORT = 8080;
-const int LOCAL_PORT = 9090;
+int PORT = 8080;
+int LOCAL_PORT = 9090;
 
 atomic<bool> running(true);
 atomic<bool> connected_to_game(false);
@@ -489,9 +489,18 @@ void command_input_loop() {
 
 int main() {
     ConsoleHelper::InitConsole();
+    //------------
+    int Port;
+    cin >> Port;
+    if (Port == NULL)
+    {
+        Port = PORT;
+    }
+    //------------
+    system("cls");
     cout << "=== MCG Multi-Window Client (Windows) ===\n";
     cout << "Local server port: " << LOCAL_PORT << "\n";
-    cout << "Game server port: " << GAME_PORT << "\n";
+    cout << "Game server port: " << Port << "\n";
     cout << "===============================\n\n";
     cout << "Note: If you don't open separate windows, all information\n";
     cout << "will be displayed directly in this console.\n";
