@@ -25,8 +25,8 @@ C:\Users\Самвел\Documents\GitHub\MCG\Server\MCG_Server.cpp(1146,12): warni
 C:\Users\Самвел\Documents\GitHub\MCG\Server\MCG_Server.cpp(1152,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
 C:\Users\Самвел\Documents\GitHub\MCG\Server\MCG_Server.cpp(1181,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
   Создание кода
-  1 of 1445 functions (<0.1%) were compiled, the rest were copied from previous compilation.
+  5 of 1446 functions ( 0.3%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    2 functions had inline decision re-evaluated but remain unchanged
+    12 functions had inline decision re-evaluated but remain unchanged
   Создание кода завершено
   MCG_Server.vcxproj -> C:\Users\Самвел\Documents\GitHub\MCG\Server\x64\Release\MCG_Server.exe

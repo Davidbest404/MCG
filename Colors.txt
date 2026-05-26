@@ -1,0 +1,16 @@
+Black - 0
+Blue - 1
+Green - 2
+Cyan - 3
+Red - 4
+Purple - 5
+Brown - 6
+Light gray - 7
+Dark gray - 8
+Light blue - 9
+Light green - 10
+Light blue - 11 - A
+Light red - 12 - B
+Light purple - 13 - C
+Yellow - 14 - E
+White - 15 - F

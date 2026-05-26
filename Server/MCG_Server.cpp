@@ -30,7 +30,7 @@ using namespace std;
 
 lua_State* gLuaState = nullptr;
 
-const int PORT = 8080;
+int PORT = 8080;
 
 // Утилиты консоли
 class ConsoleHelper {
@@ -1619,17 +1619,41 @@ void handle_client(SOCKET client_sock) {
     cout << "Client disconnected. Total: " << client_count << endl;
 }
 
+bool is_valid_port(const string& port_str, int& port_out) {
+    if (port_str.empty()) return false;
+    try {
+        size_t pos;
+        int port = stoi(port_str, &pos);
+        // Проверяем, что вся строка была использована и порт в допустимом диапазоне
+        if (pos != port_str.length()) return false;
+        if (port < 1 || port > 65535) return false;
+        port_out = port;
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+}
+
 int main() {
     cout << "=== Cross-platform RPG Game Server (Windows) ===" << endl;
     if (!network_init()) return 1;
-
-    cout << "Enter max clients: ";
+    cout << "Enter max clients (recommended limit 200): ";
     cin >> max_clients;
     cout << "Enter configuration password: ";
     cin >> Password;
     cout << "Enter server name: ";
     cin >> Name;
-
+    cout << "Enter server port (must be 1-65535): ";
+    int Port;
+    string S_Port;
+    cin >> S_Port;
+    if (!is_valid_port(S_Port, Port)) {
+        cerr << "\n[ERROR] Invalid server port. Using default " << PORT << "\n";
+        Port = PORT;
+    }
+    PORT = Port;
+    cout << endl;
     char load_choice;
     cout << "Load saved game? (y/n): ";
     cin >> load_choice;
@@ -1718,7 +1742,7 @@ int main() {
             continue;
         }
         string welcome_msg = "=== Connected to " + Name + " RPG Server ===\n";
-        welcome_msg += "Authentication required.\nFormat: AUTH|username|password\n==================================\n";
+        welcome_msg += "Authentication required.\nFormat: AUTH|username|configure password\n==================================\n";
         send(client_sock, welcome_msg.c_str(), static_cast<int>(welcome_msg.length()), 0);
         clients.push_back(client_sock);
         client_count++;
