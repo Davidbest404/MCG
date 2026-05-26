@@ -83,9 +83,14 @@ struct LocalClient {
 SOCKET game_socket = INVALID_SOCKET;
 vector<LocalClient> local_clients;
 mutex local_clients_mutex;
-mutex console_mutex;          // для синхронизации вывода
+
+recursive_mutex console_mutex;          // для синхронизации вывода
 string current_input;         // текущая строка ввода пользователя
 bool need_redraw = false;     // флаг перерисовки строки ввода
+
+size_t cursor_pos = 0;                       // позиция курсора в current_input
+vector<string> command_history;              // история введённых команд
+size_t history_index = 0;                    // текущий индекс в истории (0 = новый ввод)
 
 /*
 Black - 0
@@ -173,18 +178,22 @@ void print_colored_text(const string& text) {
 
 // redraw_input_line() больше НЕ содержит lock_guard
 void redraw_input_line() {
-    // Предполагаем, что console_mutex уже захвачен вызывающим
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    lock_guard<recursive_mutex> lock(console_mutex);
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(hConsole, &csbi);
 
+    // Перемещаемся в начало текущей строки
     COORD pos = csbi.dwCursorPosition;
     pos.X = 0;
     SetConsoleCursorPosition(hConsole, pos);
+
+    // Стираем строку
     DWORD written;
     FillConsoleOutputCharacter(hConsole, ' ', csbi.dwSize.X, pos, &written);
     SetConsoleCursorPosition(hConsole, pos);
 
+    // Рисуем приглашение
     ConsoleHelper::SetColor(15);
     cout << "|";
     ConsoleHelper::SetColor(7);
@@ -192,13 +201,19 @@ void redraw_input_line() {
     ConsoleHelper::SetColor(8);
     cout << "- ";
     ConsoleHelper::ResetColor();
+
+    // Выводим текущий ввод
     cout << current_input;
+
+    // Устанавливаем курсор на нужную позицию (после приглашения + позиция в строке)
+    COORD cursor_pos_abs = pos;
+    cursor_pos_abs.X = 4 + (SHORT)cursor_pos;
+    SetConsoleCursorPosition(hConsole, cursor_pos_abs);
     fflush(stdout);
 }
-
 // --- Функция для безопасного вывода сообщений от сервера ---
 void safe_print(const string& message) {
-    lock_guard<mutex> lock(console_mutex);
+    lock_guard<recursive_mutex> lock(console_mutex);
     // Сохраняем текущий ввод и очищаем строку
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -500,21 +515,59 @@ bool is_valid_port(const string& port_str, int& port_out) {
 void command_input_loop() {
     bool skip_redraw = false;
     print_to_main_console("Type 'help' for commands or 'windows' for window setup instructions.\n", 6);
-    // Изначально выводим пустую строку приглашения
-    redraw_input_line();
+    redraw_input_line();   // показать пустую строку ввода
 
     while (running) {
-        // Обработка ввода с клавиатуры (неблокирующая)
         while (_kbhit()) {
             int ch = _getch();
+            if (ch == 0xE0) { // расширенная клавиша
+                ch = _getch();
+                switch (ch) {
+                case 0x4B: // Стрелка влево
+                    if (cursor_pos > 0) cursor_pos--;
+                    redraw_input_line();
+                    break;
+                case 0x4D: // Стрелка вправо
+                    if (cursor_pos < current_input.size()) cursor_pos++;
+                    redraw_input_line();
+                    break;
+                case 0x48: // Стрелка вверх (история назад)
+                    if (history_index > 0) {
+                        history_index--;
+                        current_input = command_history[history_index];
+                        cursor_pos = current_input.size();
+                        redraw_input_line();
+                    }
+                    break;
+                case 0x50: // Стрелка вниз (история вперёд)
+                    if (history_index < command_history.size()) {
+                        history_index++;
+                        if (history_index == command_history.size())
+                            current_input.clear();
+                        else
+                            current_input = command_history[history_index];
+                        cursor_pos = current_input.size();
+                        redraw_input_line();
+                    }
+                    break;
+                case 0x53: // Delete
+                    if (cursor_pos < current_input.size()) {
+                        current_input.erase(cursor_pos, 1);
+                        redraw_input_line();
+                    }
+                    break;
+                }
+                continue;
+            }
             if (ch == '\r' || ch == '\n') {
                 string command = current_input;
-                current_input.clear();
-                {
-                    lock_guard<mutex> lock(console_mutex);
-                    redraw_input_line();
+                if (!command.empty()) {
+                    command_history.push_back(command);
+                    history_index = command_history.size();
                 }
-                bool skip_redraw = false;
+                current_input.clear();
+                cursor_pos = 0;
+                redraw_input_line();
                 // Обработка команды
                 if (command == "exit") {
                     running = false;
@@ -666,27 +719,25 @@ void command_input_loop() {
                     cout << "\n[ERROR] Unknown command. Type 'help' for available commands.\n";
                 }
                 if (!skip_redraw) {
-                    lock_guard<mutex> lock(console_mutex);
                     redraw_input_line();
                 }
                 skip_redraw = false;
             }
             else if (ch == '\b') {
-                if (!current_input.empty()) {
-                    current_input.pop_back();
-                    lock_guard<mutex> lock(console_mutex);
+                if (cursor_pos > 0) {
+                    current_input.erase(cursor_pos - 1, 1);
+                    cursor_pos--;
                     redraw_input_line();
                 }
+                continue;
             }
             else if (ch >= 32 && ch <= 126) {
-                current_input.push_back((char)ch);
-                lock_guard<mutex> lock(console_mutex);
+                current_input.insert(cursor_pos, 1, (char)ch);
+                cursor_pos++;
                 redraw_input_line();
+                continue;
             }
         }
-
-        // Получение сообщений от сервера (они уже обрабатываются в потоке receive_from_game_server,
-        // но вывод теперь идёт через safe_print, что корректно перерисовывает строку ввода)
         this_thread::sleep_for(chrono::milliseconds(10));
     }
 }
