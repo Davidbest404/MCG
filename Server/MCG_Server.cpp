@@ -481,8 +481,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             return;
         }
         auto& player = game_state.players[player_id];
-        string status = "\n[STATUS]\n";
-        status = "[cA][bg1]=== Your Status ===[/bg1][/cA]\n";
+        string status = "[STATUS]\n[cA][bg1]=== Your Status ===[/bg1][/cA]\n";
         status += "Name: " + player.name + "\n";
         status += "HP: " + to_string(player.hp) + "/" + to_string(player.max_hp) + "\n";
         status += "Position: (" + to_string(player.x) + "," + to_string(player.y) + ")\n";
@@ -491,8 +490,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         send(client_sock, status.c_str(), static_cast<int>(status.length()), 0);
     }
     else if (cmd == "map") {
-        string map = "\n[MAP]\n";
-        map = "[c1][bg4] === Game Map === [/bg4][/c1]\n";
+        string map = "[MAP]\n[c1][bg4] === Game Map === [/bg4][/c1]\n";
         for (int y = 5; y >= -5; y--) {
             for (int x = -5; x <= 5; x++) {
                 bool has_player = false;
@@ -1410,7 +1408,7 @@ void handle_client(SOCKET client_sock) {
             if (message[0] == '/') {
                 if (message == "/help") {
                     string help_msg = "\n[COMMAND]\n";
-                    help_msg = "\n[c2][bgC]=== Available Commands ===[/bgC][/c2]\n";
+                    help_msg += "\n[c2][bgC]=== Available Commands ===[/bgC][/c2]\n";
                     help_msg += "/help - Show this message\n/list - List all connected clients\n";
                     help_msg += "/description - Show server description\n";
                     help_msg += "/rules - Show server rules\n";
@@ -1707,6 +1705,7 @@ void handle_client(SOCKET client_sock) {
             if (is_admin) full_msg += " [ADMIN]";
             full_msg += ": " + message;
             cout << "Message: " << full_msg << endl;
+            full_msg = "[CHAT] " + full_msg;
             broadcast_message(full_msg, client_sock);
         }
     }

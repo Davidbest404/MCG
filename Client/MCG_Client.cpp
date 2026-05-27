@@ -275,18 +275,36 @@ enum class MessageType {
 
 
 MessageType get_message_type(const string& message) {
-    if (message.find("[MAP]") != string::npos)
-        return MessageType::MAP_UPDATE;
-    else if (message.find("[STATUS]") != string::npos)
-        return MessageType::STATUS_UPDATE;
-    else if (message.find("[SERVER]") != string::npos)
-        return MessageType::CHAT_MESSAGE;
-    else if (message.find("[COMMAND]") != string::npos)
-        return MessageType::COMMAND_RESPONSE;
-    else if (message.find("[LUA]") != string::npos)
-        return MessageType::COMMAND_RESPONSE;
-    else if (message.find("[ERROR]") != string::npos)
-        return MessageType::COMMAND_RESPONSE;
+    if (message.find("[MAP]") != string::npos) {
+        if (message.find("[MAP]") == 0) {
+            return MessageType::MAP_UPDATE;
+        }
+    }
+    else if (message.find("[STATUS]") != string::npos) {
+        if (message.find("[STATUS]") == 0) {
+            return MessageType::STATUS_UPDATE;
+        }
+    }
+    else if (message.find("[SERVER]") != string::npos || message.find("[CHAT]") != string::npos) {
+        if (message.find("[SERVER]") == 0 || message.find("[CHAT]") == 0) {
+            return MessageType::CHAT_MESSAGE;
+        }
+    }
+    else if (message.find("[COMMAND]") != string::npos) {
+        if (message.find("[COMMAND]") == 0) {
+            return MessageType::COMMAND_RESPONSE;
+        }
+    }
+    else if (message.find("[LUA]") != string::npos) {
+        if (message.find("[LUA]") == 0) {
+            return MessageType::COMMAND_RESPONSE;
+        }
+    }
+    else if (message.find("[ERROR]") != string::npos) {
+        if (message.find("[ERROR]") == 0) {
+            return MessageType::COMMAND_RESPONSE;
+        }
+    }
     return MessageType::SYSTEM_MESSAGE;
 }
 
