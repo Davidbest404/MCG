@@ -144,6 +144,10 @@ mutex game_mutex;
 // Атрибуты по умолчанию для новых игроков
 unordered_map<string, variant<int, float, string, bool>> default_attrs;
 mutex default_attrs_mutex;  // для потокобезопасности (опционально, но для порядка)
+// Описание и правила сервера (редактируемые)
+string server_description = "MCG - multiconsole game!";
+string server_rules = "1. Respect other players.\n2. No cheating.\n3. Have fun!";
+mutex server_info_mutex;
 
 void apply_default_attrs(Player& player) {
     lock_guard<mutex> lock(default_attrs_mutex);
@@ -232,7 +236,11 @@ void game_timer_thread() {
         }
         if (should_process_turn) {
             process_turn_end();
-            broadcast_message("\n=== Turn automatically ended by timer ===\n", INVALID_SOCKET);
+            int minutes = static_cast<int>(game_state.turn_duration_seconds / 60);
+            int seconds = static_cast<int>(game_state.turn_duration_seconds - (minutes * 60));
+            if (seconds >= 10) {
+                broadcast_message("\n=== Turn automatically ended by timer ===\n", INVALID_SOCKET);
+            }
         }
     }
 }
@@ -330,7 +338,8 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         else {
             if (lua_isstring(gLuaState, -1)) {
                 const char* result = lua_tostring(gLuaState, -1);
-                send(client_sock, result, strlen(result), 0);
+                string colored = string("[LUA] ") + result;  // добавляем маркер
+                send(client_sock, colored.c_str(), colored.size(), 0);
                 send(client_sock, "\n", 1, 0);
             }
             lua_pop(gLuaState, 1);
@@ -345,7 +354,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     lock.lock();
     // ----- Конец Lua-команд -----
 
-    if (cmd == "move") {
+    if (cmd == "time_remaining") {
+        send_time_remaining(client_sock);
+    }
+    else if (cmd == "move") {
         string direction;
         iss >> direction;
         if (game_state.players.find(player_id) == game_state.players.end()) {
@@ -507,8 +519,9 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             game_state.is_active = true;
             game_state.turn_start_time = time(nullptr);
             game_state.current_turn = 1;
-            string broadcast_msg = "=== GAME STARTED ===\nTurn duration: " +
-                to_string(game_state.turn_duration_seconds / 60) + " minutes\n";
+            int minutes = static_cast<int>(game_state.turn_duration_seconds / 60);
+            int seconds = static_cast<int>(game_state.turn_duration_seconds - (minutes * 60));
+            string broadcast_msg = "=== GAME STARTED ===\nTurn duration: " + to_string(minutes) + "m " + to_string(seconds) + "s\n";
             lock.unlock();
             broadcast_message(broadcast_msg, INVALID_SOCKET);
             ConsoleHelper::SetColor(10);
@@ -1237,9 +1250,81 @@ void LoadLuaScripts() {
     FindClose(hFind);
 }
 
+// ========== КОМАНДЫ ОПИСАНИЯ И ПРАВИЛ ==========
+
+void handle_edit_description(SOCKET client_sock, const string& command) {
+    // команда вида /edit_description Текст с \n для переноса
+    string text = command.substr(17); // длина "/edit_description " (17)
+    if (text.empty()) {
+        string err = "[ERROR] Usage: /edit_description <text with \\n for newline>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    // Заменяем "\\n" (два символа) на реальный символ перевода строки
+    size_t pos = 0;
+    while ((pos = text.find("\\n", pos)) != string::npos) {
+        text.replace(pos, 2, "\n");
+        pos += 1; // пропускаем только что вставленный символ
+    }
+    {
+        lock_guard<mutex> lock(server_info_mutex);
+        server_description = text;
+    }
+    send(client_sock, "Server description updated.\n", 28, 0);
+}
+
+void handle_edit_rules(SOCKET client_sock, const string& command) {
+    string text = command.substr(12); // "/edit_rules " длина 12
+    if (text.empty()) {
+        string err = "[ERROR] Usage: /edit_rules <text with \\n for newline>\n";
+        send(client_sock, err.c_str(), (int)err.size(), 0);
+        return;
+    }
+    size_t pos = 0;
+    while ((pos = text.find("\\n", pos)) != string::npos) {
+        text.replace(pos, 2, "\n");
+        pos += 1;
+    }
+    {
+        lock_guard<mutex> lock(server_info_mutex);
+        server_rules = text;
+    }
+    send(client_sock, "Server rules updated.\n", 22, 0);
+}
+
+void handle_description(SOCKET client_sock) {
+    lock_guard<mutex> lock(server_info_mutex);
+    if (server_description.empty()) {
+        send(client_sock, "No description set.\n", 20, 0);
+    }
+    else {
+        send(client_sock, server_description.c_str(), (int)server_description.size(), 0);
+        send(client_sock, "\n", 1, 0);
+    }
+}
+
+void handle_rules(SOCKET client_sock) {
+    lock_guard<mutex> lock(server_info_mutex);
+    if (server_rules.empty()) {
+        send(client_sock, "No rules set.\n", 14, 0);
+    }
+    else {
+        send(client_sock, server_rules.c_str(), (int)server_rules.size(), 0);
+        send(client_sock, "\n", 1, 0);
+    }
+}
+
 void handle_client(SOCKET client_sock) {
     char buffer[1024];
     cout << "Client connected: socket " << client_sock << endl;
+
+    if (!server_description.empty()) {
+        string msg = "[c8]------<====   Description   ====>-------\n" + server_description + "\n----------------------------------------[/c8]\n";
+        send(client_sock, msg.c_str(), (int)msg.size(), 0);
+    }
+
+    string auth_msg = "Authentication required.\nFormat: [c2]AUTH|username|configure password[/c2]\n========================================\n";
+    send(client_sock, auth_msg.c_str(), static_cast<int>(auth_msg.length()), 0);
 
     bool authenticated = false;
     bool is_admin = false;
@@ -1305,9 +1390,14 @@ void handle_client(SOCKET client_sock) {
             }
         }
         if (!authenticated) {
-            string error = "[ERROR]|Invalid format. Use: AUTH|username|password\n";
+            string error = "[bgB][c4][ERROR][/c4][/bgB]|Invalid format.\n[c4]Use: AUTH|username|password[/c4]\n";
             send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
         }
+    }
+
+    if (!server_rules.empty()) {
+        string msg = "=====--- Server Rules ---=====\n" + server_rules + "\n============================\n";
+        send(client_sock, msg.c_str(), (int)msg.size(), 0);
     }
 
     while (true) {
@@ -1322,6 +1412,8 @@ void handle_client(SOCKET client_sock) {
                     string help_msg = "\n[COMMAND]\n";
                     help_msg = "\n[c2][bgC]=== Available Commands ===[/bgC][/c2]\n";
                     help_msg += "/help - Show this message\n/list - List all connected clients\n";
+                    help_msg += "/description - Show server description\n";
+                    help_msg += "/rules - Show server rules\n";
                     {
                         lock_guard<mutex> lock(game_mutex);
                         if (game_state.players.find(client_info[client_sock].second) != game_state.players.end()) {
@@ -1359,6 +1451,8 @@ void handle_client(SOCKET client_sock) {
                         help_msg += "/name[new_name] - Change server name\n";
                         help_msg += "/max [number] - Change max clients\n";
                         help_msg += "/info - Show server info\n";
+                        help_msg += "/edit_description <text with \\n> - Set server description (use \\n for newline)\n";
+                        help_msg += "/edit_rules <text with \\n> - Set server rules (use \\n for newline)\n";
                         help_msg += "/clients - Show detailed client info\n";
                         help_msg += "/start_game - Start the game\n";
                         help_msg += "/pause_game - Pause the game\n";
@@ -1404,6 +1498,14 @@ void handle_client(SOCKET client_sock) {
                     }
                     list_msg += "==============================\n";
                     send(client_sock, list_msg.c_str(), static_cast<int>(list_msg.length()), 0);
+                    continue;
+                }
+                else if (message == "/description") {
+                    handle_description(client_sock);
+                    continue;
+                }
+                else if (message == "/rules") {
+                    handle_rules(client_sock);
                     continue;
                 }
                 else if (is_admin) {
@@ -1466,6 +1568,8 @@ void handle_client(SOCKET client_sock) {
                         continue;
                     }
                     else if (message == "/info") {
+                        int minutes = static_cast<int>(game_state.turn_duration_seconds / 60);
+                        int seconds = static_cast<int>(game_state.turn_duration_seconds - (minutes * 60));
                         string info_msg = "\n=== Server Information ===\n";
                         info_msg += "Name: " + Name + "\nPort: " + to_string(PORT) + "\n";
                         info_msg += "Max clients: " + to_string(max_clients) + "\n";
@@ -1473,7 +1577,7 @@ void handle_client(SOCKET client_sock) {
                         info_msg += "Config password: " + Password + "\n";
                         info_msg += "Game active: " + string(game_state.is_active ? "Yes" : "No") + "\n";
                         info_msg += "Current turn: " + to_string(game_state.current_turn) + "\n";
-                        info_msg += "Turn duration: " + to_string(game_state.turn_duration_seconds / 60) + " minutes\n";
+                        info_msg += "Turn duration: " + to_string(minutes) + "m " + to_string(seconds) + "s\n";
                         info_msg += "==========================\n";
                         send(client_sock, info_msg.c_str(), static_cast<int>(info_msg.length()), 0);
                         continue;
@@ -1506,9 +1610,11 @@ void handle_client(SOCKET client_sock) {
                     }
                     else if (message.length() > 14 && message.substr(0, 14) == "/set_turn_time") {
                         try {
-                            int seconds = stoi(message.substr(15));
-                            game_state.turn_duration_seconds = seconds;
-                            broadcast_message("Turn duration set to " + to_string(seconds / 60) + " minutes.", INVALID_SOCKET);
+                            int secTime = stoi(message.substr(15));
+                            game_state.turn_duration_seconds = secTime;
+                            int minutes = static_cast<int>(game_state.turn_duration_seconds / 60);
+                            int seconds = static_cast<int>(game_state.turn_duration_seconds - (minutes * 60));
+                            broadcast_message("Turn duration set to " + to_string(minutes) + "m " + to_string(seconds) + "s", INVALID_SOCKET);
                         }
                         catch (...) {
                             string error = "[ERROR]|Invalid number\n";
@@ -1578,13 +1684,19 @@ void handle_client(SOCKET client_sock) {
                         handle_list_attrs(client_sock, message, client_info[client_sock].second);
                         continue;
                     }
-                }
-                int player_id = client_info[client_sock].second;
-                {
-                    if (game_state.players.find(player_id) != game_state.players.end()) {
-                        process_game_command(client_sock, message, player_id, is_admin);
+                    else if (message.substr(0, 17) == "/edit_description") {
+                        handle_edit_description(client_sock, message);
+                        continue;
+}
+                    else if (message.substr(0, 12) == "/edit_rules") {
+                        handle_edit_rules(client_sock, message);
                         continue;
                     }
+                }
+                int player_id = client_info[client_sock].second;
+                if (game_state.players.find(player_id) != game_state.players.end()) {
+                    process_game_command(client_sock, message, player_id, is_admin);
+                    continue;
                 }
                 string error = "[ERROR]|Unknown command. Type /help for available commands\n";
                 send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
@@ -1704,6 +1816,8 @@ int main() {
         return 1;
     }
 
+    int minutes = static_cast<int>(game_state.turn_duration_seconds / 60);
+    int seconds = static_cast<int>(game_state.turn_duration_seconds - (minutes * 60));
     cout << "\n=== Server Information ===" << endl;
     cout << "Name: " << Name << endl;
     cout << "Platform: Windows" << endl;
@@ -1712,7 +1826,7 @@ int main() {
     cout << "Server IP: 0.0.0.0 (all interfaces)" << endl;
     cout << "Localhost: 127.0.0.1:" << PORT << endl;
     cout << "Game system: RPG Turn-based" << endl;
-    cout << "Default turn time: " << game_state.turn_duration_seconds / 60 << " minutes" << endl;
+    cout << "Default turn time: " << to_string(minutes) << "m " << to_string(seconds) << "s" << endl;
     cout << "Waiting for connections..." << endl;
     cout << "Press Ctrl+C to stop server" << endl;
     cout << "==========================\n" << endl;
@@ -1741,8 +1855,7 @@ int main() {
             cout << "Connection rejected: server full (" << max_clients << " clients)" << endl;
             continue;
         }
-        string welcome_msg = "=== Connected to " + Name + " RPG Server ===\n";
-        welcome_msg += "Authentication required.\nFormat: AUTH|username|configure password\n==================================\n";
+        string welcome_msg = "\n[bgF][c0]====-- Connected to " + Name + " RPG Server --====[/c0][/bgF]";
         send(client_sock, welcome_msg.c_str(), static_cast<int>(welcome_msg.length()), 0);
         clients.push_back(client_sock);
         client_count++;

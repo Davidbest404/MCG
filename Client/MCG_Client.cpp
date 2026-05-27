@@ -283,6 +283,8 @@ MessageType get_message_type(const string& message) {
         return MessageType::CHAT_MESSAGE;
     else if (message.find("[COMMAND]") != string::npos)
         return MessageType::COMMAND_RESPONSE;
+    else if (message.find("[LUA]") != string::npos)
+        return MessageType::COMMAND_RESPONSE;
     else if (message.find("[ERROR]") != string::npos)
         return MessageType::COMMAND_RESPONSE;
     return MessageType::SYSTEM_MESSAGE;
@@ -514,7 +516,7 @@ bool is_valid_port(const string& port_str, int& port_out) {
 // --- Новая версия command_input_loop с неблокирующим вводом ---
 void command_input_loop() {
     bool skip_redraw = false;
-    print_to_main_console("Type 'help' for commands or 'windows' for window setup instructions.\n", 6);
+    print_to_main_console("Type '//help' for commands or '//windows' for window setup instructions.\n", 6);
     redraw_input_line();   // показать пустую строку ввода
 
     while (running) {
@@ -568,121 +570,122 @@ void command_input_loop() {
                 current_input.clear();
                 cursor_pos = 0;
                 redraw_input_line();
-                // Обработка команды
-                if (command == "exit") {
-                    running = false;
-                    return;
-                }
-                else if (command == "connect") {
-                    if (connected_to_game) {
-                        print_to_main_console("\n[ERROR] Already connected to game server. Disconnect first.\n", 6);
-                        continue;
+                // Обработка команд
+                if (command.find("//") == 0) {
+                    // Обработка команды
+                    if (command == "//exit") {
+                        running = false;
+                        return;
                     }
-                    string ip, username, password;
-                    int port;
-                    cout << "Server IP [127.0.0.1]: ";
-                    getline(cin, ip);
-                    if (ip.empty()) ip = "127.0.0.1";
-                    // Проверка IP
-                    if (!is_valid_ip(ip)) {
-                        print_to_main_console("\n[ERROR] Invalid IP address format.\n", 4);
-                        continue;
-                    }
-
-                    string portStr;
-                    cout << "Server port [" << SERVER_PORT << "]: ";
-                    getline(cin, portStr);
-                    if (portStr.empty()) port = SERVER_PORT;
-                    else {
-                        if (!is_valid_port(portStr, port)) {
-                            print_to_main_console("\n[ERROR] Invalid port number (must be 1-65535).\n", 4);
+                    else if (command == "//connect") {
+                        if (connected_to_game) {
+                            print_to_main_console("\n[ERROR] Already connected to game server. Disconnect first.\n", 6);
                             continue;
                         }
+                        string ip, username, password;
+                        int port;
+                        cout << "Server IP [127.0.0.1]: ";
+                        getline(cin, ip);
+                        if (ip.empty()) ip = "127.0.0.1";
+                        // Проверка IP
+                        if (!is_valid_ip(ip)) {
+                            print_to_main_console("\n[ERROR] Invalid IP address format.\n", 4);
+                            continue;
+                        }
+
+                        string portStr;
+                        cout << "Server port [" << SERVER_PORT << "]: ";
+                        getline(cin, portStr);
+                        if (portStr.empty()) port = SERVER_PORT;
+                        else {
+                            if (!is_valid_port(portStr, port)) {
+                                print_to_main_console("\n[ERROR] Invalid port number (must be 1-65535).\n", 4);
+                                continue;
+                            }
+                        }
+                        if (connect_to_game_server(ip, port)) {
+                            connected_to_game = true;                 // Устанавливаем флаг подключения
+                            thread receive_thread(receive_from_game_server);
+                            receive_thread.detach();
+                            // Приветственное сообщение от сервера придёт в потоке приёма и отобразится автоматически
+                        }
+                        else {
+                            // Ошибка подключения уже выведена внутри connect_to_game_server
+                        }
                     }
-                    if (connect_to_game_server(ip, port)) {
-                        connected_to_game = true;                 // Устанавливаем флаг подключения
-                        thread receive_thread(receive_from_game_server);
-                        receive_thread.detach();
-                        // Приветственное сообщение от сервера придёт в потоке приёма и отобразится автоматически
+                    else if (command == "//disconnect") {
+                        if (connected_to_game) {
+                            closesocket(game_socket);
+                            game_socket = INVALID_SOCKET;
+                            connected_to_game = false;
+                            send_to_local_clients("[SYSTEM] Disconnected from game server", ClientType::CHAT_WINDOW);
+                            cout << "\n[SYSTEM] Disconnected from game server\n";
+                        }
+                        else {
+                            cout << "\n[ERROR] Not connected to game server\n";
+                        }
+                    }
+                    else if (command == "//windows") {
+                        cout << "\n=== Window Connection Instructions ===\n";
+                        cout << "Local server is running on port " << LOCAL_PORT << "\n\n";
+                        cout << "For each window, open a NEW terminal and run:\n";
+                        cout << "---------------------------------------------\n";
+                        cout << "1. Open Command Prompt or PowerShell\n";
+                        cout << "2. Navigate to this folder\n";
+                        cout << "3. Run the appropriate window client:\n";
+                        cout << "   - Chat Window:    chat_window.exe\n";
+                        cout << "   - Map Window:     map_window.exe\n";
+                        cout << "   - Status Window:  status_window.exe\n\n";
+                        cout << "Alternative: Use telnet (enable in Windows Features):\n";
+                        cout << "   telnet localhost " << LOCAL_PORT << "\n";
+                        cout << "   Then type: CHAT_WINDOW, MAP_WINDOW, or STATUS_WINDOW\n";
+                        cout << "\nNote: Windows will automatically receive relevant updates.\n";
+                        cout << "========================================\n\n";
+                        cout << "\n=== Connected Windows Status ===\n";
+                        cout << "Chat Windows:   " << chat_windows_count << " (messages will go here)\n";
+                        cout << "Map Windows:    " << map_windows_count << " (map updates will go here)\n";
+                        cout << "Status Windows: " << status_windows_count << " (status updates will go here)\n";
+                        cout << "================================\n\n";
+                        if (chat_windows_count == 0)
+                            print_to_main_console("Note: No chat windows open. Chat messages will appear in this console.\n", 14);
+                        if (map_windows_count == 0)
+                            print_to_main_console("Note: No map windows open. Map updates will appear in this console.\n", 14);
+                        if (status_windows_count == 0)
+                            print_to_main_console("Note: No status windows open. Status updates will appear in this console.\n", 14);
+                    }
+                    else if (command == "//help") {
+                        cout << "\n=== MCG Client Commands ===\n";
+                        cout << "//help        - Show this help\n";
+                        cout << "//exit        - Exit client\n";
+                        cout << "//connect     - Connect to game server\n";
+                        cout << "//disconnect  - Disconnect from game server\n";
+                        cout << "//windows     - Show window connection instructions\n";
+                        cout << "//clients     - Show connected windows\n";
+                        cout << "=============================\n";
+                    }
+                    else if (command == "//clients") {
+                        lock_guard<mutex> lock(local_clients_mutex);
+                        cout << "\n=== Connected Windows ===\n";
+                        cout << "Count: " << local_clients.size() << "\n";
+                        for (const auto& client : local_clients) {
+                            cout << "  - " << client.name;
+                            if (client.type == ClientType::CHAT_WINDOW) cout << " (Chat)";
+                            else if (client.type == ClientType::MAP_WINDOW) cout << " (Map)";
+                            else if (client.type == ClientType::STATUS_WINDOW) cout << " (Status)";
+                            cout << "\n";
+                        }
+                        cout << "==========================\n\n";
                     }
                     else {
-                        // Ошибка подключения уже выведена внутри connect_to_game_server
+                        cout << "\n[ERROR] Unknown command. Type 'help' for available commands.\n";
                     }
                 }
-                else if (command == "disconnect") {
-                    if (connected_to_game) {
-                        closesocket(game_socket);
-                        game_socket = INVALID_SOCKET;
-                        connected_to_game = false;
-                        send_to_local_clients("[SYSTEM] Disconnected from game server", ClientType::CHAT_WINDOW);
-                        cout << "\n[SYSTEM] Disconnected from game server\n";
-                    }
-                    else {
-                        cout << "\n[ERROR] Not connected to game server\n";
-                    }
-                }
-                else if (command == "windows") {
-                    cout << "\n=== Window Connection Instructions ===\n";
-                    cout << "Local server is running on port " << LOCAL_PORT << "\n\n";
-                    cout << "For each window, open a NEW terminal and run:\n";
-                    cout << "---------------------------------------------\n";
-                    cout << "1. Open Command Prompt or PowerShell\n";
-                    cout << "2. Navigate to this folder\n";
-                    cout << "3. Run the appropriate window client:\n";
-                    cout << "   - Chat Window:    chat_window.exe\n";
-                    cout << "   - Map Window:     map_window.exe\n";
-                    cout << "   - Status Window:  status_window.exe\n\n";
-                    cout << "Alternative: Use telnet (enable in Windows Features):\n";
-                    cout << "   telnet localhost " << LOCAL_PORT << "\n";
-                    cout << "   Then type: CHAT_WINDOW, MAP_WINDOW, or STATUS_WINDOW\n";
-                    cout << "\nNote: Windows will automatically receive relevant updates.\n";
-                    cout << "========================================\n\n";
-                    cout << "\n=== Connected Windows Status ===\n";
-                    cout << "Chat Windows:   " << chat_windows_count << " (messages will go here)\n";
-                    cout << "Map Windows:    " << map_windows_count << " (map updates will go here)\n";
-                    cout << "Status Windows: " << status_windows_count << " (status updates will go here)\n";
-                    cout << "================================\n\n";
-                    if (chat_windows_count == 0)
-                        print_to_main_console("Note: No chat windows open. Chat messages will appear in this console.\n", 14);
-                    if (map_windows_count == 0)
-                        print_to_main_console("Note: No map windows open. Map updates will appear in this console.\n", 14);
-                    if (status_windows_count == 0)
-                        print_to_main_console("Note: No status windows open. Status updates will appear in this console.\n", 14);
-                }
-                else if (command == "help") {
-                    cout << "\n=== MCG Client Commands ===\n";
-                    cout << "connect     - Connect to game server\n";
-                    cout << "disconnect  - Disconnect from game server\n";
-                    cout << "windows     - Show window connection instructions\n";
-                    cout << "send [cmd]  - Send command to game server\n";
-                    cout << "            Example: send /help (server commands in chat)\n";
-                    cout << "            Example: send Hello everyone! (chat message)\n";
-                    cout << "status [id] - Get player status (with optional ID)\n";
-                    cout << "map         - Get game map\n";
-                    cout << "clients     - Show connected windows\n";
-                    cout << "help        - Show this help\n";
-                    cout << "exit        - Exit client\n";
-                    cout << "=============================\n";
-                }
-                else if (command == "clients") {
-                    lock_guard<mutex> lock(local_clients_mutex);
-                    cout << "\n=== Connected Windows ===\n";
-                    cout << "Count: " << local_clients.size() << "\n";
-                    for (const auto& client : local_clients) {
-                        cout << "  - " << client.name;
-                        if (client.type == ClientType::CHAT_WINDOW) cout << " (Chat)";
-                        else if (client.type == ClientType::MAP_WINDOW) cout << " (Map)";
-                        else if (client.type == ClientType::STATUS_WINDOW) cout << " (Status)";
-                        cout << "\n";
-                    }
-                    cout << "==========================\n\n";
-                }
-                else if (command.find("send ") == 0) {
+                else {
                     if (!connected_to_game) {
                         safe_print("[ERROR] Not connected to game server!");
                         continue;
                     }
-                    string cmd = command.substr(5);
+                    string cmd = command;
                     if (!cmd.empty()) {
                         if (!safe_send(game_socket, cmd)) {
                             safe_print("[ERROR] Failed to send command");
@@ -692,31 +695,6 @@ void command_input_loop() {
                             this_thread::sleep_for(chrono::milliseconds(50));
                         }
                     }
-                }
-                else if (command.find("status") == 0) {
-                    if (!connected_to_game) {
-                        cout << "\n[ERROR] Not connected to game server!\n";
-                        continue;
-                    }
-                    if (safe_send(game_socket, command)) {
-                    }
-                    else {
-                        cout << "\n[ERROR] Failed to send status request\n";
-                    }
-                }
-                else if (command == "map") {
-                    if (!connected_to_game) {
-                        cout << "\n[ERROR] Not connected to game server!\n";
-                        continue;
-                    }
-                    if (safe_send(game_socket, "/map")) {
-                    }
-                    else {
-                        cout << "\n[ERROR] Failed to send map request\n";
-                    }
-                }
-                else {
-                    cout << "\n[ERROR] Unknown command. Type 'help' for available commands.\n";
                 }
                 if (!skip_redraw) {
                     redraw_input_line();
@@ -750,6 +728,7 @@ int main() {
     //------------
     int LPort;
     string S_LPort;
+    cout << "Local server port: ";
     getline(cin, S_LPort);
     if (S_LPort.empty()) {
         LPort = LOCAL_PORT;
@@ -764,6 +743,7 @@ int main() {
 
     int Port;
     string S_Port;
+    cout << "Game server port: ";
     getline(cin, S_Port);
     if (S_Port.empty()) {
         Port = SERVER_PORT;
@@ -781,9 +761,11 @@ int main() {
     cout << "Local server port: " << LOCAL_PORT << "\n";
     cout << "Game server port: " << SERVER_PORT << "\n";
     cout << "===============================\n\n";
+    ConsoleHelper::SetColor(8);
     cout << "Note: If you don't open separate windows, all information\n";
     cout << "will be displayed directly in this console.\n";
-    cout << "Use 'windows' command to see how to open separate windows.\n\n";
+    cout << "Use '//windows' command to see how to open separate windows.\n\n";
+    ConsoleHelper::ResetColor();
     if (!network_init()) {
         cerr << "\n[FATAL] Network initialization failed!\n";
         return 1;
