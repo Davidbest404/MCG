@@ -1,6 +1,5 @@
 ﻿#include "lua.hpp"   // вместо трёх отдельных include
 #include <iostream>
-#include <variant>
 #include <string>
 #include <random>
 #include <fstream>
@@ -17,6 +16,7 @@
 #include <unordered_map>
 #include <functional>
 #include <memory>
+#include <variant>
 // Только Windows
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -29,6 +29,9 @@
 using namespace std;
 
 lua_State* gLuaState = nullptr;
+// Описания Lua-команд
+map<string, string> lua_command_descriptions;
+mutex lua_desc_mutex;
 
 int PORT = 8080;
 
@@ -82,9 +85,7 @@ White - 15 - F
 
 enum class ActionType {
     MOVE,
-    ATTACK,
-    DEFEND,
-    USE_ITEM,
+    LUA,
     WAIT,
     SKIP
 };
@@ -262,14 +263,8 @@ void process_turn_end() {
         case ActionType::MOVE:
             turn_summary += p.name + " moved to position (" + to_string(p.x) + "," + to_string(p.y) + ")\n";
             break;
-        case ActionType::ATTACK:
-            turn_summary += p.name + " attacked!\n";
-            break;
-        case ActionType::DEFEND:
-            turn_summary += p.name + " is defending.\n";
-            break;
-        case ActionType::USE_ITEM:
-            turn_summary += p.name + " used an item.\n";
+        case ActionType::LUA:
+            turn_summary += p.name + " used dynamic(Lua) command\n";
             break;
         default:
             turn_summary += p.name + " waited.\n";
@@ -303,7 +298,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     unique_lock<mutex> lock(game_mutex, adopt_lock);
 
     if (!game_state.is_active && command != "/start_game" &&
-        command.find("/set_") != 0 && command != "/status") {
+        command.find("/set_") != 0 && command != "/status" && command != "/map") {
         send(client_sock, "Game is not active. Admin must start the game.\n", 52, 0);
         return;
     }
@@ -384,55 +379,6 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         string broadcast_msg = player.name + " will move to " + direction + ".";
         lock.unlock();
         broadcast_message(broadcast_msg, client_sock);
-    }
-    else if (cmd == "attack") {
-        int target_id;
-        iss >> target_id;
-        if (game_state.players.find(player_id) == game_state.players.end() ||
-            game_state.players.find(target_id) == game_state.players.end()) {
-            send(client_sock, "Player or target not found!\n", 28, 0);
-            return;
-        }
-        auto& attacker = game_state.players[player_id];
-        auto& target = game_state.players[target_id];
-        if (attacker.is_ready) {
-            send(client_sock, "You already made your move this turn!\n", 40, 0);
-            return;
-        }
-        int damage = 10;
-        target.hp -= damage;
-        if (target.hp < 0) {
-            target.hp = 100;
-            target.x = 0;
-            target.y = 0;
-        }
-        attacker.last_action = ActionType::ATTACK;
-        attacker.is_ready = true;
-
-        string response = "You will attack " + target.name + " for " +
-            to_string(Random(damage, damage / 2)) + " damage!\n";
-        if (target.hp <= 0) {
-            response += target.name + " has been defeated!\n";
-        }
-        send(client_sock, response.c_str(), static_cast<int>(response.length()), 0);
-
-        string broadcast_msg = attacker.name + " attacked " + target.name +
-            " for " + to_string(damage) + " damage!";
-
-        lock.unlock();
-        broadcast_message(broadcast_msg, client_sock);
-    }
-    else if (cmd == "defend") {
-        if (game_state.players.find(player_id) == game_state.players.end()) {
-            send(client_sock, "Player not found!\n", 19, 0);
-            return;
-        }
-        auto& player = game_state.players[player_id];
-        player.last_action = ActionType::DEFEND;
-        send(client_sock, "You are defending this turn.\n", 30, 0);
-    }
-    else if (cmd == "use") {
-        send(client_sock, "Item used!\n", 11, 0);
     }
     else if (cmd == "skip") {
         if (game_state.players.find(player_id) == game_state.players.end()) {
@@ -535,7 +481,8 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             int seconds;
             iss >> seconds;
             game_state.turn_duration_seconds = seconds;
-            string broadcast_msg = "Turn duration set to " + to_string(seconds / 60) + " minutes.";
+            game_state.turn_duration_seconds = seconds;
+            string broadcast_msg = "Turn duration set to " + to_string(seconds / 60) + " minutes and " + to_string(seconds - ((seconds/60) *60));
             lock.unlock();
             broadcast_message(broadcast_msg, INVALID_SOCKET);
         }
@@ -1228,23 +1175,62 @@ void register_lua_functions() {
 }
 
 void LoadLuaScripts() {
-    CreateDirectoryA("actions", NULL);   // ANSI-версия
-    WIN32_FIND_DATAA findData;           // ANSI-структура
-    HANDLE hFind = FindFirstFileA("actions/*.lua", &findData); // ANSI-версия
+    // Очищаем старые описания
+    {
+        lock_guard<mutex> lock(lua_desc_mutex);
+        lua_command_descriptions.clear();
+    }
+
+    CreateDirectoryA("actions", NULL);
+    WIN32_FIND_DATAA findData;
+    HANDLE hFind = FindFirstFileA("actions/*.lua", &findData);
     if (hFind == INVALID_HANDLE_VALUE) {
         cout << "No Lua scripts in actions/ folder." << endl;
         return;
     }
+
     do {
-        string filename = "actions/" + string(findData.cFileName); // теперь cFileName - char[]
+        string filename = "actions/" + string(findData.cFileName);
         if (luaL_dofile(gLuaState, filename.c_str()) != LUA_OK) {
             cerr << "Lua error in " << filename << ": " << lua_tostring(gLuaState, -1) << endl;
             lua_pop(gLuaState, 1);
+            continue;
         }
-        else {
-            cout << "Loaded: " << filename << endl;
+
+        // Извлекаем имя команды (имя файла без расширения .lua)
+        string cmd_name = findData.cFileName;
+        size_t dot = cmd_name.find_last_of('.');
+        if (dot != string::npos) cmd_name = cmd_name.substr(0, dot);
+
+        // Пытаемся получить описание через функцию get_description()
+        lua_getglobal(gLuaState, "get_description");
+        if (lua_isfunction(gLuaState, -1)) {
+            if (lua_pcall(gLuaState, 0, 1, 0) == LUA_OK) {
+                if (lua_isstring(gLuaState, -1)) {
+                    const char* desc = lua_tostring(gLuaState, -1);
+                    lock_guard<mutex> lock(lua_desc_mutex);
+                    lua_command_descriptions[cmd_name] = desc;
+                } else {
+                    lock_guard<mutex> lock(lua_desc_mutex);
+                    lua_command_descriptions[cmd_name] = "";
+                }
+                lua_pop(gLuaState, 1);
+            } else {
+                const char* err = lua_tostring(gLuaState, -1);
+                cerr << "Error calling get_description() in " << filename << ": " << err << endl;
+                lua_pop(gLuaState, 1);
+                lock_guard<mutex> lock(lua_desc_mutex);
+                lua_command_descriptions[cmd_name] = "";
+            }
+        } else {
+            lua_pop(gLuaState, 1); // убираем nil
+            lock_guard<mutex> lock(lua_desc_mutex);
+            lua_command_descriptions[cmd_name] = "";
         }
-    } while (FindNextFileA(hFind, &findData)); // ANSI-версия
+
+        cout << "Loaded: " << filename << endl;
+    } while (FindNextFileA(hFind, &findData));
+
     FindClose(hFind);
 }
 
@@ -1409,18 +1395,21 @@ void handle_client(SOCKET client_sock) {
                 if (message == "/help") {
                     string help_msg = "\n[COMMAND]\n";
                     help_msg += "\n[c2][bgC]=== Available Commands ===[/bgC][/c2]\n";
-                    help_msg += "/help - Show this message\n/list - List all connected clients\n";
+                    help_msg += "/help - Show this message\n";
+                    help_msg += "/list - List all connected clients\n";
                     help_msg += "/description - Show server description\n";
                     help_msg += "/rules - Show server rules\n";
                     {
                         lock_guard<mutex> lock(game_mutex);
                         if (game_state.players.find(client_info[client_sock].second) != game_state.players.end()) {
                             help_msg += "==================--   Player's   --================\n";
-                            help_msg += "/move [direction] - Move (north, south, east, west)\n";
-                            help_msg += "/attack [target_id] - Attack another player\n";
-                            help_msg += "/defend - Defend yourself\n/skip - Skip your turn\n";
-                            help_msg += "/status - Check your status\n/map - Show game map\n";
-                            help_msg += "/ready - Mark yourself as ready\n/unready - Mark yourself as not ready\n";
+                            help_msg += "/move [direction] - [c8]Move (north, south, east, west)[/c8]\n";
+                            help_msg += "/skip - [c8]Skip your turn[/c8]\n";
+                            help_msg += "/status - [c8]Check your status[/c8]\n";
+                            help_msg += "/map - [c8]Show game map[/c8]\n";
+                            help_msg += "/ready - [c8]Mark yourself as ready[/c8]\n";
+                            help_msg += "/unready - [c8]Mark yourself as not ready[/c8]\n";
+                            help_msg += "/time_remaining - [c8]Check how much time left[/c8]\n";
                         }
                     }
 
@@ -1440,7 +1429,15 @@ void handle_client(SOCKET client_sock) {
                     if (!lua_cmds.empty()) {
                         help_msg += "===--- Dynamic (Lua) Commands ---===\n";
                         for (const auto& cmd : lua_cmds) {
-                            help_msg += "/" + cmd + "\n";
+                            help_msg += "/" + cmd;
+                            {
+                                lock_guard<mutex> lock(lua_desc_mutex);
+                                auto it = lua_command_descriptions.find(cmd);
+                                if (it != lua_command_descriptions.end() && !it->second.empty()) {
+                                    help_msg += " - " + it->second;
+                                }
+                            }
+                            help_msg += "\n";
                         }
                     }
                     if (is_admin) {
@@ -1598,7 +1595,7 @@ void handle_client(SOCKET client_sock) {
                         game_state.is_active = true;
                         game_state.turn_start_time = time(nullptr);
                         game_state.current_turn = 1;
-                        broadcast_message("=== GAME STARTED ===\nTurn duration: " + to_string(game_state.turn_duration_seconds / 60) + " minutes\n", INVALID_SOCKET);
+                        broadcast_message("=== GAME STARTED ===\nTurn duration: " + to_string(game_state.turn_duration_seconds / 60) + " minutes and " + to_string(game_state.turn_duration_seconds - ((game_state.turn_duration_seconds / 60)*60)) + " seconds\n", INVALID_SOCKET);
                         continue;
                     }
                     else if (message == "/pause_game") {

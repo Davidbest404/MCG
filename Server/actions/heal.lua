@@ -5,3 +5,7 @@ function heal(player_id, args)
     set_hp(player_id, new_hp)
     return "[cE]You[/cE] healed 30 HP! Now " .. new_hp .. "/" .. max_hp
 end
+
+function get_description()
+    return "Heals 30 HP"
+end
