@@ -101,6 +101,7 @@ public:
     int max_hp = 100;
     bool is_ready = false;
     ActionType last_action = ActionType::WAIT;
+    bool can_move = true;
     int x = 0;
     int y = 0;
 
@@ -308,7 +309,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     iss >> cmd;
 
     // ----- Динамические Lua-команды -----
-// Освобождаем мьютекс, чтобы Lua не блокировал сервер
+    // Освобождаем мьютекс, чтобы Lua не блокировал сервер
     lock.unlock();
 
     lua_getglobal(gLuaState, cmd.c_str());
@@ -362,6 +363,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         auto& player = game_state.players[player_id];
         if (player.is_ready) {
             send(client_sock, "You already made your move this turn!\n", 40, 0);
+            return;
+        }
+        if (!player.can_move) {   // используем поле класса
+            send(client_sock, "You cannot move right now (can_move is false).\n", 51, 0);
             return;
         }
         if (direction == "north") player.y++;
@@ -431,6 +436,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         status += "Name: " + player.name + "\n";
         status += "HP: " + to_string(player.hp) + "/" + to_string(player.max_hp) + "\n";
         status += "Position: (" + to_string(player.x) + "," + to_string(player.y) + ")\n";
+        status += "Can move: " + string(player.can_move ? "Yes" : "No") + "\n";
         status += "Ready: " + string(player.is_ready ? "Yes" : "No") + "\n";
         status += "==================\n";
         send(client_sock, status.c_str(), static_cast<int>(status.length()), 0);
@@ -841,7 +847,9 @@ void save_game_state(const string& filename) {
             << player.max_hp << " "
             << player.x << " "
             << player.y << " "
-            << player.is_admin;
+            << player.is_admin
+            << player.can_move;
+
 
         // Сохраняем динамические атрибуты
         file << " " << player.attrs.size();
@@ -905,7 +913,8 @@ void load_game_state(const string& filename) {
             >> player.max_hp
             >> player.x
             >> player.y
-            >> player.is_admin;
+            >> player.is_admin
+            >> player.can_move;
 
         size_t attr_count;
         file >> attr_count;
@@ -1040,6 +1049,25 @@ int lua_set_y(lua_State* L) {
     if (it != game_state.players.end()) it->second.y = y;
     return 0;
 }
+int lua_set_can_move(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    bool can = lua_toboolean(L, 2) != 0;
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it != game_state.players.end()) {
+        it->second.can_move = can;
+    }
+    return 0;
+}
+
+int lua_get_can_move(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    bool can = (it != game_state.players.end()) ? it->second.can_move : true;
+    lua_pushboolean(L, can);
+    return 1;
+}
 int lua_get_player_name(lua_State* L) {
     int id = luaL_checkinteger(L, 1);
     lock_guard<mutex> lock(game_mutex);
@@ -1164,6 +1192,8 @@ void register_lua_functions() {
     lua_register(gLuaState, "set_x", lua_set_x);
     lua_register(gLuaState, "get_y", lua_get_y);
     lua_register(gLuaState, "set_y", lua_set_y);
+    lua_register(gLuaState, "set_can_move", lua_set_can_move);
+    lua_register(gLuaState, "get_can_move", lua_get_can_move);
     lua_register(gLuaState, "get_player_name", lua_get_player_name);
     lua_register(gLuaState, "send_to_player", lua_send_to_player);
     lua_register(gLuaState, "broadcast", lua_broadcast);
@@ -1453,6 +1483,7 @@ void handle_client(SOCKET client_sock) {
                         help_msg += "/pause_game - Pause the game\n";
                         help_msg += "/set_turn_time[seconds] - Set turn duration\n";
                         help_msg += "/end_turn - Force end current turn\n";
+                        help_msg += "/set_can_move[id][true / false] - Allow or forbid movement for a player\n";
                         help_msg += "/save[filename] - Save game state\n";
                         help_msg += "/load [filename] - Load game state\n";
                         help_msg += "/reload_scripts - Reload Lua actions\n";
@@ -1617,6 +1648,33 @@ void handle_client(SOCKET client_sock) {
                         }
                         continue;
                     }
+                    else if (message.substr(0, 13) == "/set_can_move") {
+                        istringstream iss(message.substr(14));
+                        int target_id;
+                        string val;
+                        if (!(iss >> target_id >> val)) {   // <-- ЭТА ПРОВЕРКА КРИТИЧНА
+                            send(client_sock, "Usage: /set_can_move <player_id> <true/false>\n", 48, 0);
+                            continue;
+                        }
+                        bool can_move;
+                        if (val == "true") can_move = true;
+                        else if (val == "false") can_move = false;
+                        else {
+                            send(client_sock, "Value must be true or false\n", 29, 0);
+                            continue;
+                        }
+                        lock_guard<mutex> lock(game_mutex);
+                        auto it = game_state.players.find(target_id);
+                        if (it != game_state.players.end()) {
+                            it->second.can_move = can_move;   // присваиваем поле, а не атрибут!
+                            string msg = "Player " + to_string(target_id) + " can_move set to " + (can_move ? "true" : "false") + "\n";
+                            send(client_sock, msg.c_str(), msg.size(), 0);
+                        }
+                        else {
+                            send(client_sock, "Player not found\n", 18, 0);
+                        }
+                        continue;
+                        }
                     else if (message == "/end_turn") {
                         process_turn_end();
                         continue;
