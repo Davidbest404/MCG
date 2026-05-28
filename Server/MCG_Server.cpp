@@ -125,7 +125,7 @@ public:
 struct GameState {
     bool is_active = false;
     time_t turn_start_time;
-    int turn_duration_seconds = 1800;
+    int turn_duration_seconds = 1888;
     int current_turn = 1;
     vector<string> turn_log;
     map<int, Player> players;

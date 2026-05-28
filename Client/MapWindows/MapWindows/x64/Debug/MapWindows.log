@@ -1,4 +1,3 @@
 ﻿  MapWindow.cpp
-C:\Users\Самвел\Documents\GitHub\MCG\Client\MapWindows\MapWindow.cpp(112,41): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
-C:\Users\Самвел\Documents\GitHub\MCG\Client\MapWindows\MapWindow.cpp(161,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
-  MapWindows.vcxproj -> C:\Users\Самвел\Documents\GitHub\MCG\Client\MapWindows\x64\Debug\MapWindows.exe
+C:\Users\Student\Documents\GitHub\MCG\Client\MapWindows\MapWindow.cpp(114,14): warning C4244: инициализация: преобразование "SOCKET" в "int", возможна потеря данных
+  MapWindows.vcxproj -> C:\Users\Student\Documents\GitHub\MCG\Client\MapWindows\x64\Debug\MapWindows.exe

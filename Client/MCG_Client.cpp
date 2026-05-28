@@ -31,6 +31,14 @@ atomic<bool> running(true);
 atomic<bool> connected_to_game(false);
 atomic<bool> local_server_running(false);
 
+// Управление периодическим обновлением
+atomic<bool> auto_map_update(false);
+atomic<bool> auto_status_update(false);
+atomic<int> map_update_interval(5);     // секунды, по умолчанию 5
+atomic<int> status_update_interval(5);  // секунды, по умолчанию 5
+thread map_update_thread;
+thread status_update_thread;
+
 atomic<int> chat_windows_count(0);
 atomic<int> map_windows_count(0);
 atomic<int> status_windows_count(0);
@@ -253,6 +261,38 @@ string safe_receive(SOCKET sock, int timeout_ms = 1000) {
         return string(buffer);
     }
     return "";
+}
+
+void auto_map_update_thread() {
+    while (running && auto_map_update) {
+        this_thread::sleep_for(chrono::seconds(map_update_interval));
+        if (connected_to_game && auto_map_update) {
+            safe_send(game_socket, "/map");
+        }
+    }
+}
+
+void auto_status_update_thread() {
+    while (running && auto_status_update) {
+        this_thread::sleep_for(chrono::seconds(status_update_interval));
+        if (connected_to_game && auto_status_update) {
+            safe_send(game_socket, "/status");
+        }
+    }
+}
+
+void stop_map_updates() {
+    auto_map_update = false;
+    if (map_update_thread.joinable()) {
+        map_update_thread.join();
+    }
+}
+
+void stop_status_updates() {
+    auto_status_update = false;
+    if (status_update_thread.joinable()) {
+        status_update_thread.join();
+    }
 }
 
 bool network_init() {
@@ -633,6 +673,9 @@ void command_input_loop() {
                     }
                     else if (command == "//disconnect") {
                         if (connected_to_game) {
+                            // Останавливаем автообновления
+                            stop_map_updates();
+                            stop_status_updates();
                             closesocket(game_socket);
                             game_socket = INVALID_SOCKET;
                             connected_to_game = false;
@@ -679,7 +722,14 @@ void command_input_loop() {
                         cout << "//disconnect  - Disconnect from game server\n";
                         cout << "//windows     - Show window connection instructions\n";
                         cout << "//clients     - Show connected windows\n";
+                        cout << "//map_upd [sec] - Toggle auto map update (with optional interval)\n";
+                        cout << "                 Example: //map_upd 10  (start with 10s interval)\n";
+                        cout << "                 Example: //map_upd     (stop)\n";
+                        cout << "//status_upd [sec] - Toggle auto status update (with optional interval)\n";
+                        cout << "                 Example: //status_upd 5 (start with 5s interval)\n";
+                        cout << "                 Example: //status_upd  (stop)\n";
                         cout << "=============================\n";
+                        redraw_input_line();
                     }
                     else if (command == "//clients") {
                         lock_guard<mutex> lock(local_clients_mutex);
@@ -694,6 +744,71 @@ void command_input_loop() {
                         }
                         cout << "==========================\n\n";
                     }
+                    else if (command.find("//map_upd") == 0) {
+                        // Парсим аргумент: //map_upd [секунды]
+                        string arg = command.size() > 8 ? command.substr(9) : "";
+                        int interval = 0;
+                        if (!arg.empty()) {
+                            try {
+                                interval = stoi(arg);
+                            }
+                            catch (...) {
+                                interval = 0;
+                            }
+                        }
+                        if (interval <= 0) {
+                            // Выключаем автообновление
+                            if (auto_map_update) {
+                                stop_map_updates();
+                                cout << "\n[SYSTEM] Auto map update stopped.\n";
+                            }
+                            else {
+                                cout << "\n[SYSTEM] Auto map update was already off.\n";
+                            }
+                        }
+                        else {
+                            // Включаем с новым интервалом
+                            stop_map_updates(); // останавливаем старый поток, если был
+                            map_update_interval = interval;
+                            auto_map_update = true;
+                            map_update_thread = thread(auto_map_update_thread);
+                            map_update_thread.detach();
+                            cout << "\n[SYSTEM] Auto map update started (interval: " << interval << "s)\n";
+                        }
+                        redraw_input_line();
+                        continue;
+                        }
+                    else if (command.find("//status_upd") == 0) {
+                            string arg = command.size() > 12 ? command.substr(13) : "";
+                            int interval = 0;
+                            if (!arg.empty()) {
+                                try {
+                                    interval = stoi(arg);
+                                }
+                                catch (...) {
+                                    interval = 0;
+                                }
+                            }
+                            if (interval <= 0) {
+                                if (auto_status_update) {
+                                    stop_status_updates();
+                                    cout << "\n[SYSTEM] Auto status update stopped.\n";
+                                }
+                                else {
+                                    cout << "\n[SYSTEM] Auto status update was already off.\n";
+                                }
+                            }
+                            else {
+                                stop_status_updates();
+                                status_update_interval = interval;
+                                auto_status_update = true;
+                                status_update_thread = thread(auto_status_update_thread);
+                                status_update_thread.detach();
+                                cout << "\n[SYSTEM] Auto status update started (interval: " << interval << "s)\n";
+                            }
+                            redraw_input_line();
+                            continue;
+                            }
                     else {
                         cout << "\n[ERROR] Unknown command. Type 'help' for available commands.\n";
                     }
