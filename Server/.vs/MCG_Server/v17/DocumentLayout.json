@@ -1,9 +1,9 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Server\\",
+  "WorkspaceRootPath": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Server\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{B8306CB3-D805-43D7-8A5D-57525979F675}|MCG_Server.vcxproj|C:\\Users\\Student\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "AbsoluteMoniker": "D:0:0:{B8306CB3-D805-43D7-8A5D-57525979F675}|MCG_Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{B8306CB3-D805-43D7-8A5D-57525979F675}|MCG_Server.vcxproj|solutionrelative:MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
@@ -20,11 +20,11 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "MCG_Server.cpp",
-              "DocumentMoniker": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp",
+              "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp",
               "RelativeDocumentMoniker": "MCG_Server.cpp",
-              "ToolTip": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp",
+              "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\Server\\MCG_Server.cpp",
               "RelativeToolTip": "MCG_Server.cpp",
-              "ViewState": "AgIAABwGAAAAAAAAAAAUwI0GAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAH4AAAAAAAAAAAAAAH8AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-05-28T14:07:09.33Z",
               "EditorCaption": ""

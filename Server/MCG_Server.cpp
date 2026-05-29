@@ -14,6 +14,7 @@
 #include <sstream>
 #include <any>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <memory>
 #include <variant>
@@ -124,6 +125,7 @@ public:
     void removeAttr(const string& key) { attrs.erase(key); }
 
 };
+
 struct GameState {
     bool is_active = false;
     time_t turn_start_time;
@@ -146,6 +148,10 @@ mutex game_mutex;
 // Атрибуты по умолчанию для новых игроков
 unordered_map<string, variant<int, float, string, bool>> default_attrs;
 mutex default_attrs_mutex;  // для потокобезопасности (опционально, но для порядка)
+// Управление Lua-командами
+unordered_set<string> available_lua_commands;  // все загруженные скрипты (имена)
+unordered_set<string> active_lua_commands;     // активные в данный момент
+mutex lua_commands_mutex;                      // для потокобезопасного доступа
 // Описание и правила сервера (редактируемые)
 string server_description = "MCG - multiconsole game!";
 string server_rules = "1. Respect other players.\n2. No cheating.\n3. Have fun!";
@@ -314,6 +320,18 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
 
     lua_getglobal(gLuaState, cmd.c_str());
     if (lua_isfunction(gLuaState, -1)) {
+        // Проверяем, активна ли команда
+        bool is_active = false;
+        {
+            lock_guard<mutex> lock(lua_commands_mutex);
+            is_active = (active_lua_commands.find(cmd) != active_lua_commands.end());
+        }
+        if (!is_active) {
+            string err = "[ERROR]|Lua command '" + cmd + "' is currently disabled by admin.\n";
+            send(client_sock, err.c_str(), err.size(), 0);
+            lua_pop(gLuaState, 1); // убираем функцию
+            return;
+        }
         lua_pushinteger(gLuaState, player_id);
         // Собираем аргументы в таблицу (args[1], args[2] ...)
         lua_newtable(gLuaState);
@@ -1218,7 +1236,7 @@ void LoadLuaScripts() {
         cout << "No Lua scripts in actions/ folder." << endl;
         return;
     }
-
+    unordered_set<string> new_available;
     do {
         string filename = "actions/" + string(findData.cFileName);
         if (luaL_dofile(gLuaState, filename.c_str()) != LUA_OK) {
@@ -1231,37 +1249,117 @@ void LoadLuaScripts() {
         string cmd_name = findData.cFileName;
         size_t dot = cmd_name.find_last_of('.');
         if (dot != string::npos) cmd_name = cmd_name.substr(0, dot);
+        new_available.insert(cmd_name);
 
-        // Пытаемся получить описание через функцию get_description()
+        // Получение описания (как было раньше)...
         lua_getglobal(gLuaState, "get_description");
         if (lua_isfunction(gLuaState, -1)) {
             if (lua_pcall(gLuaState, 0, 1, 0) == LUA_OK) {
-                if (lua_isstring(gLuaState, -1)) {
-                    const char* desc = lua_tostring(gLuaState, -1);
-                    lock_guard<mutex> lock(lua_desc_mutex);
-                    lua_command_descriptions[cmd_name] = desc;
-                } else {
-                    lock_guard<mutex> lock(lua_desc_mutex);
-                    lua_command_descriptions[cmd_name] = "";
-                }
+                const char* desc = lua_isstring(gLuaState, -1) ? lua_tostring(gLuaState, -1) : "";
+                lock_guard<mutex> lock(lua_desc_mutex);
+                lua_command_descriptions[cmd_name] = desc;
                 lua_pop(gLuaState, 1);
-            } else {
-                const char* err = lua_tostring(gLuaState, -1);
-                cerr << "Error calling get_description() in " << filename << ": " << err << endl;
+            }
+            else {
+                cerr << "Error calling get_description() in " << filename << endl;
                 lua_pop(gLuaState, 1);
                 lock_guard<mutex> lock(lua_desc_mutex);
                 lua_command_descriptions[cmd_name] = "";
             }
-        } else {
-            lua_pop(gLuaState, 1); // убираем nil
+        }
+        else {
+            lua_pop(gLuaState, 1);
             lock_guard<mutex> lock(lua_desc_mutex);
             lua_command_descriptions[cmd_name] = "";
         }
 
         cout << "Loaded: " << filename << endl;
     } while (FindNextFileA(hFind, &findData));
-
     FindClose(hFind);
+    // Обновляем доступные команды
+    {
+        lock_guard<mutex> lock(lua_commands_mutex);
+        available_lua_commands = move(new_available);
+        // Удаляем из активных те команды, которых больше нет в available
+        for (auto it = active_lua_commands.begin(); it != active_lua_commands.end(); ) {
+            if (available_lua_commands.find(*it) == available_lua_commands.end())
+                it = active_lua_commands.erase(it);
+            else
+                ++it;
+        }
+    }
+}
+
+bool save_lua_preset(const string& preset_name, string& error_msg) {
+    // Создаём папку presets (если нет)
+    if (CreateDirectoryA("presets", NULL) == 0) {
+        DWORD err = GetLastError();
+        if (err != ERROR_ALREADY_EXISTS) {
+            error_msg = "Failed to create directory 'presets' (error " + to_string(err) + ")";
+            return false;
+        }
+    }
+
+    string filename = "presets/" + preset_name + ".mcglua";
+    ofstream file(filename);
+    if (!file.is_open()) {
+        error_msg = "Cannot open file: " + filename;
+        return false;
+    }
+
+    {
+        lock_guard<mutex> lock(lua_commands_mutex);
+        if (active_lua_commands.empty()) {
+            error_msg = "No active Lua commands to save.";
+            return false;
+        }
+        for (const auto& cmd : active_lua_commands) {
+            file << cmd << "\n";
+            if (!file.good()) {
+                error_msg = "Write error while saving";
+                return false;
+            }
+        }
+    }
+    file.close();
+
+    // Диагностика в консоль сервера
+    ConsoleHelper::SetColor(10);
+    cout << "[PRESET] Saved '" << preset_name << "' with " << active_lua_commands.size() << " commands." << endl;
+    ConsoleHelper::SetColor(8);
+    return true;
+}
+
+bool load_lua_preset(const string& preset_name, string& error_msg) {
+    string filename = "presets/" + preset_name + ".mcglua";
+    ifstream file(filename);
+    if (!file.is_open()) {
+        error_msg = "Preset file not found: " + filename;
+        return false;
+    }
+
+    unordered_set<string> new_active;
+    string line;
+    while (getline(file, line)) {
+        if (!line.empty()) new_active.insert(line);
+    }
+    file.close();
+
+    {
+        lock_guard<mutex> lock(lua_commands_mutex);
+        active_lua_commands.clear();
+        for (const auto& cmd : new_active) {
+            if (available_lua_commands.count(cmd))
+                active_lua_commands.insert(cmd);
+            else
+                cout << "[WARN] Preset contains unknown command: " << cmd << endl;
+        }
+    }
+
+    ConsoleHelper::SetColor(10);
+    cout << "[PRESET] Loaded '" << preset_name << "' -> " << active_lua_commands.size() << " active commands." << endl;
+    ConsoleHelper::SetColor(8);
+    return true;
 }
 
 // ========== КОМАНДЫ ОПИСАНИЯ И ПРАВИЛ ==========
@@ -1456,16 +1554,18 @@ void handle_client(SOCKET client_sock) {
                         } while (FindNextFileA(hFind, &findData));
                         FindClose(hFind);
                     }
-                    if (!lua_cmds.empty()) {
+                    // Вместо перебора всех файлов .lua, используется available_lua_commands и active_lua_commands
+                    if (!available_lua_commands.empty()) {
                         help_msg += "===--- Dynamic (Lua) Commands ---===\n";
-                        for (const auto& cmd : lua_cmds) {
+                        lock_guard<mutex> lock(lua_commands_mutex);
+                        for (const auto& cmd : available_lua_commands) {
+                            if (active_lua_commands.count(cmd) == 0) continue; // не показываем неактивные
                             help_msg += "/" + cmd;
                             {
-                                lock_guard<mutex> lock(lua_desc_mutex);
+                                lock_guard<mutex> desc_lock(lua_desc_mutex);
                                 auto it = lua_command_descriptions.find(cmd);
-                                if (it != lua_command_descriptions.end() && !it->second.empty()) {
+                                if (it != lua_command_descriptions.end() && !it->second.empty())
                                     help_msg += " - " + it->second;
-                                }
                             }
                             help_msg += "\n";
                         }
@@ -1500,6 +1600,12 @@ void handle_client(SOCKET client_sock) {
                         help_msg += "/default_attr_list - list all default attributes\n";
                         help_msg += "/sync_default_attrs - apply current default attributes to all existing players\n";
                         help_msg += "/list_attrs [target_id] - list all attributes of a player (default: yourself)\n";
+                        help_msg += "/lua_list - Show all Lua commands and their status\n";
+                        help_msg += "/lua_enable <cmd> - Activate a Lua command\n";
+                        help_msg += "/lua_disable <cmd> - Deactivate a Lua command\n";
+                        help_msg += "/lua_preset_save <name> - Save current active set as preset\n";
+                        help_msg += "/lua_preset_load <name> - Load a preset (replaces active set)\n";
+                        help_msg += "/lua_preset_list - List all saved presets\n";
                     }
                     help_msg += "====-----          -----====\n";
                     send(client_sock, help_msg.c_str(), static_cast<int>(help_msg.length()), 0);
@@ -1626,7 +1732,7 @@ void handle_client(SOCKET client_sock) {
                         game_state.is_active = true;
                         game_state.turn_start_time = time(nullptr);
                         game_state.current_turn = 1;
-                        broadcast_message("=== GAME STARTED ===\nTurn duration: " + to_string(game_state.turn_duration_seconds / 60) + " minutes and " + to_string(game_state.turn_duration_seconds - ((game_state.turn_duration_seconds / 60)*60)) + " seconds\n", INVALID_SOCKET);
+                        broadcast_message("=== GAME STARTED ===\nTurn duration: " + to_string(game_state.turn_duration_seconds / 60) + " minutes and " + to_string(game_state.turn_duration_seconds - ((game_state.turn_duration_seconds / 60) * 60)) + " seconds\n", INVALID_SOCKET);
                         continue;
                     }
                     else if (message == "/pause_game") {
@@ -1674,7 +1780,7 @@ void handle_client(SOCKET client_sock) {
                             send(client_sock, "Player not found\n", 18, 0);
                         }
                         continue;
-                        }
+                    }
                     else if (message == "/end_turn") {
                         process_turn_end();
                         continue;
@@ -1724,7 +1830,7 @@ void handle_client(SOCKET client_sock) {
                     else if (message.substr(0, 20) == "/default_attr_remove") {
                         handle_default_attr_remove(client_sock, message);
                         continue;
-                        }
+                    }
                     else if (message.substr(0, 17) == "/default_attr_list") {
                         handle_default_attr_list(client_sock);
                         continue;
@@ -1740,9 +1846,137 @@ void handle_client(SOCKET client_sock) {
                     else if (message.substr(0, 17) == "/edit_description") {
                         handle_edit_description(client_sock, message);
                         continue;
-}
+                    }
                     else if (message.substr(0, 12) == "/edit_rules") {
                         handle_edit_rules(client_sock, message);
+                        continue;
+                    }
+                    else if (message == "/lua_list") {
+                        lock_guard<mutex> lock(lua_commands_mutex);
+                        string msg = "\n=== Lua Commands Status ===\n";
+                        for (const auto& cmd : available_lua_commands) {
+                            msg += (active_lua_commands.count(cmd) ? "[ACTIVE] " : "[INACTIVE] ");
+                            msg += cmd;
+                            // Добавляем описание, если есть
+                            lock_guard<mutex> desc_lock(lua_desc_mutex);
+                            auto it = lua_command_descriptions.find(cmd);
+                            if (it != lua_command_descriptions.end() && !it->second.empty())
+                                msg += " - " + it->second;
+                            msg += "\n";
+                        }
+                        msg += "==========================\n";
+                        send(client_sock, msg.c_str(), msg.size(), 0);
+                        continue;
+                    }
+                    else if (message.substr(0, 11) == "/lua_enable") {
+                        if (message != "/lua_enable") {
+                            string cmd = message.substr(12);
+                            if (cmd.empty()) {
+                                send(client_sock, "[ERROR] Usage: /lua_enable <command_name>\n", 42, 0);
+                                continue;
+                            }
+                            bool success = false;
+                            {
+                                lock_guard<mutex> lock(lua_commands_mutex);
+                                if (available_lua_commands.count(cmd)) {
+                                    active_lua_commands.insert(cmd);
+                                    success = true;
+                                }
+                            }
+                            if (success) {
+                                string ok = "Lua command '" + cmd + "' is now ACTIVE.\n";
+                                send(client_sock, ok.c_str(), ok.size(), 0);
+                            }
+                            else {
+                                string err = "[ERROR] Lua command '" + cmd + "' not found.\n";
+                                send(client_sock, err.c_str(), err.size(), 0);
+                            }
+                            continue;
+                        }
+                    }
+                    else if (message.substr(0, 12) == "/lua_disable") {
+                        if (message != "/lua_disable") {
+                            string cmd = message.substr(13);
+                            if (cmd.empty()) {
+                                send(client_sock, "[ERROR] Usage: /lua_disable <command_name>\n", 43, 0);
+                                continue;
+                            }
+                            bool removed = false;
+                            {
+                                lock_guard<mutex> lock(lua_commands_mutex);
+                                removed = (active_lua_commands.erase(cmd) > 0);
+                            }
+                            if (removed) {
+                                string ok = "Lua command '" + cmd + "' is now INACTIVE.\n";
+                                send(client_sock, ok.c_str(), ok.size(), 0);
+                            }
+                            else {
+                                string err = "[ERROR] Lua command '" + cmd + "' is not active.\n";
+                                send(client_sock, err.c_str(), err.size(), 0);
+                            }
+                            continue;
+                        }
+                    }
+                    else if (message.substr(0, 16) == "/lua_preset_save") {
+                        string preset = message.substr(17);
+                        if (preset.empty()) {
+                            send(client_sock, "[ERROR] Usage: /lua_preset_save <preset_name>\n", 49, 0);
+                            continue;
+                        }
+                        if (preset.find_first_of("\\/:*?\"<>|") != string::npos) {
+                            send(client_sock, "[ERROR] Invalid preset name (cannot contain \\ / : * ? \" < > |)\n", 70, 0);
+                            continue;
+                        }
+                        string error_msg;
+                        if (save_lua_preset(preset, error_msg)) {
+                            string ok = "[OK] Preset '" + preset + "' saved.\n";
+                            send(client_sock, ok.c_str(), (int)ok.size(), 0);
+                        }
+                        else {
+                            string err = "[ERROR] " + error_msg + "\n";
+                            send(client_sock, err.c_str(), (int)err.size(), 0);
+                        }
+                        continue;
+                    }
+                    else if (message.substr(0, 16) == "/lua_preset_load") {
+                        string preset = message.substr(17);
+                        if (preset.empty()) {
+                            send(client_sock, "[ERROR] Usage: /lua_preset_load <preset_name>\n", 49, 0);
+                            continue;
+                        }
+                        if (preset.find_first_of("\\/:*?\"<>|") != string::npos) {
+                            send(client_sock, "[ERROR] Invalid preset name.\n", 29, 0);
+                            continue;
+                        }
+                        string error_msg;
+                        if (load_lua_preset(preset, error_msg)) {
+                            string ok = "[OK] Preset '" + preset + "' loaded. Use /lua_list to see active commands.\n";
+                            send(client_sock, ok.c_str(), (int)ok.size(), 0);
+                        }
+                        else {
+                            string err = "[ERROR] " + error_msg + "\n";
+                            send(client_sock, err.c_str(), (int)err.size(), 0);
+                        }
+                        continue;
+                    }
+                    else if (message == "/lua_preset_list") {
+                        CreateDirectoryA("presets", NULL);
+                        WIN32_FIND_DATAA findData;
+                        HANDLE hFind = FindFirstFileA("presets/*.mcglua", &findData);
+                        if (hFind == INVALID_HANDLE_VALUE) {
+                            send(client_sock, "No presets found.\n", 18, 0);
+                            continue;
+                        }
+                        string msg = "\n=== Available Presets ===\n";
+                        do {
+                            string fname = findData.cFileName;
+                            size_t dot = fname.find_last_of('.');
+                            if (dot != string::npos) fname = fname.substr(0, dot);
+                            msg += fname + "\n";
+                        } while (FindNextFileA(hFind, &findData));
+                        FindClose(hFind);
+                        msg += "=========================\n";
+                        send(client_sock, msg.c_str(), (int)msg.size(), 0);
                         continue;
                     }
                 }
