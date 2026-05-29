@@ -105,6 +105,9 @@ public:
     bool can_move = true;
     int x = 0;
     int y = 0;
+    int start_x;  // пред. позиция для отката хода
+    int start_y;
+
 
     // Динамические атрибуты
     unordered_map<string, variant<int, float, string, bool>> attrs;
@@ -134,6 +137,22 @@ struct GameState {
     vector<string> turn_log;
     map<int, Player> players;
 };
+
+struct Tile {
+    int id = 0;
+    bool walkable = true;
+    string on_enter;
+    string on_exit;
+    string on_step;
+    string display;   // внешний вид (один символ, пара символов или несколько строк)
+};
+
+// Глобальные данные карты
+vector<vector<int>> world_map;  // world_map[y][x] = id тайла
+int map_width = 0, map_height = 0;
+int map_center_x = 0;
+int map_center_y = 0;
+map<int, Tile> tile_types;      // соответствие id -> свойства тайла
 
 vector<SOCKET> clients;
 atomic<int> client_count(0);
@@ -172,6 +191,10 @@ void remove_attr_from_all(const string& attr_name) {
     }
 }
 
+int Random(int max, int min) {
+    return rand() % (max - min + 1) + min;
+}
+
 // Прототипы
 void broadcast_message(const string& message, SOCKET sender);
 void handle_client(SOCKET client_sock);
@@ -196,9 +219,278 @@ int lua_set_y(lua_State* L);
 int lua_send_to_player(lua_State* L);
 int lua_broadcast(lua_State* L);
 int lua_get_player_name(lua_State* L);
+// Функции для работы с картой и тайлами
+void load_world_map(const string& filename);
+void save_world_map(const string& filename);
+bool is_walkable(int x, int y);
+void call_tile_function(const string& func_name, int player_id, int x, int y, int tile_id);
+void on_player_enter_tile(Player& player, int old_x, int old_y, int new_x, int new_y);
+void set_tile(int x, int y, int new_id);
 
-int Random(int max, int min) {
-    return rand() % (max - min + 1) + min;
+bool find_nearest_walkable(int tx, int ty, int& out_x, int& out_y) {
+    int best_dist = INT_MAX;
+    bool found = false;
+    // Логические границы карты:
+    int min_log_x = -map_center_x;
+    int max_log_x = map_width - 1 - map_center_x;
+    int min_log_y = -map_center_y;
+    int max_log_y = map_height - 1 - map_center_y;
+    for (int y = min_log_y; y <= max_log_y; ++y) {
+        for (int x = min_log_x; x <= max_log_x; ++x) {
+            if (is_walkable(x, y)) {
+                int dist = abs(x - tx) + abs(y - ty);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    out_x = x;
+                    out_y = y;
+                    found = true;
+                }
+            }
+        }
+    }
+    return found;
+}
+// Корректирует позицию игрока, если текущая невалидна.
+// Возвращает true, если позиция была изменена.
+bool correct_player_position(Player& player) {
+    int old_x = player.x, old_y = player.y;
+    if (is_walkable(old_x, old_y)) {
+        return false; // позиция валидна
+    }
+    // Ищем ближайшую проходимую клетку к центру (0,0)
+    int new_x, new_y;
+    if (find_nearest_walkable(0, 0, new_x, new_y)) {
+        player.x = new_x;
+        player.y = new_y;
+        string msg = "[SYSTEM] Your position was invalid. You have been moved to (" +
+            to_string(new_x) + "," + to_string(new_y) + ").\n";
+        send(player.sock, msg.c_str(), msg.size(), 0);
+        return true;
+    }
+    return false;
+}
+
+// Корректирует позиции всех игроков, у которых текущая позиция невалидна.
+void correct_all_players_positions() {
+    lock_guard<mutex> lock(game_mutex);
+    for (auto& [id, player] : game_state.players) {
+        correct_player_position(player);
+    }
+}
+
+void load_world_map(const string& filename) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Failed to load world map from " << filename << ". Creating default 10x10 map." << endl;
+        world_map.clear();
+        world_map.push_back({ 1 });
+        map_width = 10;
+        map_height = 10;
+        map_center_x = (map_width - 1) / 2;
+        map_center_y = (map_height - 1) / 2;
+        return;
+    }
+
+    world_map.clear();
+    string line;
+    while (getline(file, line)) {
+        if (line.empty()) continue;
+        vector<int> row;
+        size_t pos = 0;
+        string token;
+        while ((pos = line.find(';')) != string::npos) {
+            token = line.substr(0, pos);
+            if (!token.empty()) {
+                row.push_back(stoi(token));
+            }
+            line.erase(0, pos + 1);
+        }
+        if (!row.empty())
+            world_map.push_back(row);
+    }
+    file.close();
+
+    if (world_map.empty()) {
+        world_map.push_back({ 1 });
+    }
+
+    map_height = world_map.size();
+    map_width = world_map[0].size();
+    map_center_x = (map_width - 1) / 2;
+    map_center_y = (map_height - 1) / 2;
+
+    // Создаём тайлы для неизвестных id
+    for (int y = 0; y < map_height; ++y) {
+        for (int x = 0; x < map_width; ++x) {
+            int tid = world_map[y][x];
+            if (tile_types.find(tid) == tile_types.end()) {
+                Tile new_tile;
+                new_tile.id = tid;
+                new_tile.walkable = true;
+                new_tile.display = "?";   // стандартный маркер
+                tile_types[tid] = new_tile;
+                cout << "Auto-created tile for id " << tid << endl;
+            }
+        }
+    }
+
+    // После map_width, map_height и пересчёта map_center_x, map_center_y проверяем правильны ли позиции игроков
+    correct_all_players_positions();
+
+    ConsoleHelper::SetColor(10);
+    cout << "World map loaded: " << map_width << "x" << map_height << endl;
+    ConsoleHelper::SetColor(8);
+}
+
+// Установить тайл в логических координатах (x, y)
+void set_tile(int x, int y, int new_id) {
+    int abs_x = map_center_x + x;
+    int abs_y = map_center_y - y;
+    if (abs_x < 0 || abs_x >= map_width || abs_y < 0 || abs_y >= map_height) return;
+    if (tile_types.find(new_id) == tile_types.end()) {
+        Tile new_tile;
+        new_tile.id = new_id;
+        new_tile.walkable = true;
+        new_tile.display = "?";
+        tile_types[new_id] = new_tile;
+        cout << "Auto-created tile id " << new_id << endl;
+    }
+    world_map[abs_y][abs_x] = new_id;
+    correct_all_players_positions();
+}
+// Сохранить текущую карту в файл (в том же формате, что и World.txt)
+void save_world_map(const string& filename) {
+    ofstream file(filename);
+    if (!file) {
+        cerr << "Failed to save world map to " << filename << endl;
+        return;
+    }
+    for (int y = 0; y < map_height; ++y) {
+        for (int x = 0; x < map_width; ++x) {
+            file << world_map[y][x];
+            if (x != map_width - 1) file << ";";
+        }
+        file << ";\n";  // каждая строка заканчивается точкой с запятой
+    }
+    file.close();
+    ConsoleHelper::SetColor(10);
+    cout << "World map saved to " << filename << endl;
+    ConsoleHelper::SetColor(8);
+}
+
+// Проверка, можно ли встать на клетку (x, y)
+bool is_walkable(int x, int y) {   // x, y – логические координаты (центр 0,0)
+    int abs_x = map_center_x + x;
+    int abs_y = map_center_y - y;   // потому что y север, а в массиве y=0 верх
+    if (abs_x < 0 || abs_x >= map_width || abs_y < 0 || abs_y >= map_height)
+        return false;
+    int tid = world_map[abs_y][abs_x];
+    auto it = tile_types.find(tid);
+    if (it == tile_types.end()) return false;
+    return it->second.walkable;
+}
+
+// Вызов Lua-функции, привязанной к тайлу (on_enter/on_exit/on_step)
+void call_tile_function(const string& func_name, int player_id, int x, int y, int tile_id) {
+    if (func_name.empty()) return;
+    lua_getglobal(gLuaState, func_name.c_str());
+    if (lua_isfunction(gLuaState, -1)) {
+        lua_pushinteger(gLuaState, player_id);
+        lua_pushinteger(gLuaState, x);
+        lua_pushinteger(gLuaState, y);
+        lua_pushinteger(gLuaState, tile_id);
+        if (lua_pcall(gLuaState, 4, 0, 0) != LUA_OK) {
+            const char* err = lua_tostring(gLuaState, -1);
+            cerr << "Error calling tile function '" << func_name << "': " << err << endl;
+            lua_pop(gLuaState, 1);
+        }
+    }
+    else {
+        lua_pop(gLuaState, 1);
+    }
+}
+
+// Обработка смены тайла игроком (вызов on_exit старого и on_enter нового)
+void on_player_enter_tile(Player& player, int old_x, int old_y, int new_x, int new_y) {
+    // Выход со старого тайла
+    int old_abs_x = map_center_x + old_x;
+    int old_abs_y = map_center_y - old_y;
+    if (old_abs_x >= 0 && old_abs_x < map_width && old_abs_y >= 0 && old_abs_y < map_height) {
+        int old_tile_id = world_map[old_abs_y][old_abs_x];
+        auto it = tile_types.find(old_tile_id);
+        if (it != tile_types.end() && !it->second.on_exit.empty()) {
+            call_tile_function(it->second.on_exit, player.id, old_x, old_y, old_tile_id);
+        }
+    }
+    // Вход на новый тайл
+    int new_abs_x = map_center_x + new_x;
+    int new_abs_y = map_center_y - new_y;
+    if (new_abs_x >= 0 && new_abs_x < map_width && new_abs_y >= 0 && new_abs_y < map_height) {
+        int new_tile_id = world_map[new_abs_y][new_abs_x];
+        auto it = tile_types.find(new_tile_id);
+        if (it != tile_types.end() && !it->second.on_enter.empty()) {
+            call_tile_function(it->second.on_enter, player.id, new_x, new_y, new_tile_id);
+        }
+    }
+}
+void save_tiles(const string& filename) {
+    ofstream file(filename);
+    if (!file) {
+        cerr << "Failed to save tiles to " << filename << endl;
+        return;
+    }
+    file << tile_types.size() << endl;
+    for (const auto& [id, tile] : tile_types) {
+        // Экранируем переводы строк в display
+        string display_escaped = tile.display;
+        size_t pos = 0;
+        while ((pos = display_escaped.find('\n', pos)) != string::npos) {
+            display_escaped.replace(pos, 1, "\\n");
+            pos += 2;
+        }
+        file << id << " " << tile.walkable << " "
+            << tile.on_enter << " " << tile.on_exit << " " << tile.on_step << " "
+            << display_escaped << endl;
+    }
+    file.close();
+    cout << "Tiles saved to " << filename << endl;
+}
+
+void load_tiles(const string& filename) {
+    ifstream file(filename);
+    if (!file) {
+        cerr << "Failed to load tiles from " << filename << endl;
+        return;
+    }
+    size_t count;
+    file >> count;
+    tile_types.clear();
+    for (size_t i = 0; i < count; ++i) {
+        Tile tile;
+        string display_escaped;
+        file >> tile.id >> tile.walkable >> tile.on_enter >> tile.on_exit >> tile.on_step >> display_escaped;
+        // Восстанавливаем переводы строк
+        string display;
+        size_t pos = 0;
+        while ((pos = display_escaped.find("\\n", pos)) != string::npos) {
+            display += display_escaped.substr(0, pos) + "\n";
+            display_escaped.erase(0, pos + 2);
+            pos = 0;
+        }
+        display += display_escaped;
+        tile.display = display;
+        tile_types[tile.id] = tile;
+    }
+    file.close();
+    cout << "Tiles loaded from " << filename << endl;
+}
+
+char get_tile_char(int tile_id) {
+    auto it = tile_types.find(tile_id);
+    if (it == tile_types.end()) return '?';
+    const string& disp = it->second.display;
+    if (disp.empty()) return '?';
+    return disp[0];   // первый символ первой строки
 }
 
 bool network_init() {
@@ -276,6 +568,16 @@ void process_turn_end() {
         default:
             turn_summary += p.name + " waited.\n";
         }
+        if (p.last_action != ActionType::MOVE) {
+            int tid = world_map[p.y][p.x];
+            auto it = tile_types.find(tid);
+            if (it != tile_types.end() && !it->second.on_step.empty()) {
+                call_tile_function(it->second.on_step, p.id, p.x, p.y, tid);
+            }
+        }
+        int abs_x = map_center_x + p.x;
+        int abs_y = map_center_y - p.y;
+        int tid = world_map[abs_y][abs_x];
         p.is_ready = false;
     }
     turn_summary += "=============================\n";
@@ -308,6 +610,11 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         command.find("/set_") != 0 && command != "/status" && command != "/map") {
         send(client_sock, "Game is not active. Admin must start the game.\n", 52, 0);
         return;
+    }
+
+    bool auto_ready = false;
+    if (game_state.is_active) {
+        if (game_state.turn_duration_seconds < 10) auto_ready = true;
     }
 
     istringstream iss(command.substr(1));
@@ -348,6 +655,28 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             send(client_sock, err, strlen(err), 0);
             send(client_sock, "\n", 1, 0);
             lua_pop(gLuaState, 1);
+            if (auto_ready) {
+                lock_guard<mutex> lock(game_mutex);
+                auto it = game_state.players.find(player_id);
+                if (it != game_state.players.end()) {
+                    if (it->second.last_action == ActionType::WAIT) {
+                        it->second.start_x = it->second.x;
+                        it->second.start_y = it->second.y;
+                    }
+                    it->second.last_action = ActionType::LUA;
+                    it->second.is_ready = true;
+                }
+            }
+            else {
+                // не авто-подтверждение – не делаем ready, но сохраняем стартовую позицию
+                lock_guard<mutex> lock(game_mutex);
+                auto it = game_state.players.find(player_id);
+                if (it != game_state.players.end() && it->second.last_action == ActionType::WAIT) {
+                    it->second.start_x = it->second.x;
+                    it->second.start_y = it->second.y;
+                    it->second.last_action = ActionType::LUA;
+                }
+            }
         }
         else {
             if (lua_isstring(gLuaState, -1)) {
@@ -372,36 +701,65 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         send_time_remaining(client_sock);
     }
     else if (cmd == "move") {
-        string direction;
-        iss >> direction;
-        if (game_state.players.find(player_id) == game_state.players.end()) {
-            send(client_sock, "Player not found!\n", 19, 0);
-            return;
+        {
+            string direction;
+            iss >> direction;
+            if (game_state.players.find(player_id) == game_state.players.end()) {
+                send(client_sock, "Player not found!\n", 19, 0);
+                return;
+            }
+            auto& player = game_state.players[player_id];
+            if (player.is_ready && player.last_action != ActionType::WAIT) {
+                send(client_sock, "You already performed an action this turn.Use / unready to cancel it.\n", 69, 0);
+                return;
+            }
+            if (!player.can_move) {
+                send(client_sock, "You cannot move right now (can_move is false).\n", 51, 0);
+                return;
+            }
+
+
+            int new_x = player.x, new_y = player.y;
+            if (direction == "u") new_y++;
+            else if (direction == "d") new_y--;
+            else if (direction == "r") new_x++;
+            else if (direction == "l") new_x--;
+            else {
+                send(client_sock, "Invalid direction. Use: u - up, d - down, l - left, r - right\n", 50, 0);
+                return;
+            }
+
+            // Проверка проходимости (границы и walkable)
+            if (!is_walkable(new_x, new_y)) {
+                send(client_sock, "You cannot go there! The tile is blocked.\n", 43, 0);
+                return;
+            }
+
+            int old_x = player.x, old_y = player.y;
+            // Вызов событий выхода/входа (можно сделать до или после обновления координат,
+            // но лучше до, чтобы old_x,old_y были старыми)
+            on_player_enter_tile(player, old_x, old_y, new_x, new_y);
+
+            if (player.last_action == ActionType::WAIT) {
+                player.start_x = player.x;
+                player.start_y = player.y;
+            }
+
+            // Обновляем координаты
+            player.x = new_x;
+            player.y = new_y;
+            player.last_action = ActionType::MOVE;
+            if (!auto_ready) {
+                player.is_ready = false;  // чтобы игрок мог отменить через /unready
+            }
+
+            string response = "You moved to " + direction + ". Position: (" +
+                to_string(player.x) + "," + to_string(player.y) + ")\n";
+            send(client_sock, response.c_str(), static_cast<int>(response.length()), 0);
+            string broadcast_msg = player.name + " moved to " + direction + ".";
+            lock.unlock();
+            broadcast_message(broadcast_msg, client_sock);
         }
-        auto& player = game_state.players[player_id];
-        if (player.is_ready) {
-            send(client_sock, "You already made your move this turn!\n", 40, 0);
-            return;
-        }
-        if (!player.can_move) {   // используем поле класса
-            send(client_sock, "You cannot move right now (can_move is false).\n", 51, 0);
-            return;
-        }
-        if (direction == "north") player.y++;
-        else if (direction == "south") player.y--;
-        else if (direction == "east") player.x++;
-        else if (direction == "west") player.x--;
-        else {
-            send(client_sock, "Invalid direction. Use: north, south, east, west\n", 50, 0);
-            return;
-        }
-        player.last_action = ActionType::MOVE;
-        string response = "You will move to " + direction + ". Position: (" +
-            to_string(player.x) + "," + to_string(player.y) + ")\n";
-        send(client_sock, response.c_str(), static_cast<int>(response.length()), 0);
-        string broadcast_msg = player.name + " will move to " + direction + ".";
-        lock.unlock();
-        broadcast_message(broadcast_msg, client_sock);
     }
     else if (cmd == "skip") {
         if (game_state.players.find(player_id) == game_state.players.end()) {
@@ -409,8 +767,13 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             return;
         }
         auto& player = game_state.players[player_id];
+        if (player.last_action == ActionType::WAIT) {
+            player.start_x = player.x;
+            player.start_y = player.y;
+        }
         player.last_action = ActionType::SKIP;
-        player.is_ready = true;
+        if (auto_ready) player.is_ready = true;
+        else player.is_ready = false;
         send(client_sock, "You skipped your turn.\n", 24, 0);
     }
     else if (cmd == "ready") {
@@ -441,9 +804,17 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             return;
         }
         auto& player = game_state.players[player_id];
+        if (player.is_ready) {
+            send(client_sock, "You are already ready – cannot unready after confirming.\n", 60, 0);
+            return;
+        }
+        // Восстанавливаем позицию (если было движение)
+        player.x = player.start_x;
+        player.y = player.start_y;
+        player.last_action = ActionType::WAIT;   // разрешаем выбрать новое действие
         player.is_ready = false;
-        send(client_sock, "You are no longer ready.\n", 26, 0);
-    }
+        send(client_sock, "Your action was cancelled. You are back at starting position.\n", 66, 0);
+}
     else if (cmd == "status") {
         if (game_state.players.find(player_id) == game_state.players.end()) {
             send(client_sock, "Player not found!\n", 19, 0);
@@ -460,28 +831,31 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         send(client_sock, status.c_str(), static_cast<int>(status.length()), 0);
     }
     else if (cmd == "map") {
-        string map = "[MAP]\n[c1][bg4] === Game Map === [/bg4][/c1]\n";
-        for (int y = 5; y >= -5; y--) {
-            for (int x = -5; x <= 5; x++) {
+        string map_str = "[MAP]\n[c1][bg4] === Game Map === [/bg4][/c1]\n";
+        for (int abs_y = 0; abs_y < map_height; ++abs_y) {
+            for (int abs_x = 0; abs_x < map_width; ++abs_x) {
+                int log_x = abs_x - map_center_x;
+                int log_y = map_center_y - abs_y;
                 bool has_player = false;
                 for (auto& pair : game_state.players) {
-                    if (pair.second.x == x && pair.second.y == y) {
-                        map += to_string(pair.second.id);
+                    if (pair.second.x == log_x && pair.second.y == log_y) {
+                        map_str += to_string(pair.second.id);
                         has_player = true;
                         break;
                     }
                 }
                 if (!has_player) {
-                    if (x == 0 && y == 0) map += "X";
-                    else map += ".";
+                    int tid = world_map[abs_y][abs_x];
+                    char symbol = get_tile_char(tid);
+                    map_str += symbol;
                 }
-                map += " ";
+                map_str += " ";
             }
-            map += "\n";
+            map_str += "\n";
         }
-        map += "================\n";
-        send(client_sock, map.c_str(), static_cast<int>(map.length()), 0);
-    }
+        map_str += "================\n";
+        send(client_sock, map_str.c_str(), static_cast<int>(map_str.length()), 0);
+}
     else if (is_admin) {
         if (cmd == "start_game") {
             game_state.is_active = true;
@@ -506,7 +880,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             iss >> seconds;
             game_state.turn_duration_seconds = seconds;
             game_state.turn_duration_seconds = seconds;
-            string broadcast_msg = "Turn duration set to " + to_string(seconds / 60) + " minutes and " + to_string(seconds - ((seconds/60) *60));
+            string broadcast_msg = "Turn duration set to " + to_string(seconds / 60) + " minutes and " + to_string(seconds - ((seconds / 60) * 60));
             lock.unlock();
             broadcast_message(broadcast_msg, INVALID_SOCKET);
         }
@@ -528,6 +902,174 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         else if (cmd == "reload_scripts") {
             LoadLuaScripts();
             send(client_sock, "Lua scripts reloaded.\n", 22, 0);
+        }
+        else if (cmd == "save_tiles") {
+            string filename;
+            iss >> filename;
+            if (filename.empty()) filename = "tiles.mcgtile";
+            save_tiles(filename);
+            send(client_sock, ("Tiles saved to " + filename + "\n").c_str(), 0, 0);
+        }
+        else if (cmd == "load_tiles") {
+            string filename;
+            iss >> filename;
+            if (filename.empty()) filename = "tiles.mcgtile";
+            load_tiles(filename);
+            send(client_sock, ("Tiles loaded from " + filename + "\n").c_str(), 0, 0);
+        }
+        else if (cmd == "tile_set_display") {
+            int tile_id;
+            string display_str;
+            iss >> tile_id;
+            getline(iss, display_str);
+            if (!display_str.empty() && display_str[0] == ' ') display_str.erase(0, 1);
+            if (tile_types.find(tile_id) != tile_types.end()) {
+                // заменяем \\n на реальные \n
+                size_t pos = 0;
+                while ((pos = display_str.find("\\n", pos)) != string::npos) {
+                    display_str.replace(pos, 2, "\n");
+                    pos += 1;
+                }
+                tile_types[tile_id].display = display_str;
+                send(client_sock, ("Display for tile " + to_string(tile_id) + " set.\n").c_str(), 0, 0);
+            }
+            else {
+                send(client_sock, "Tile ID not found. Use /tile_create first.\n", 42, 0);
+            }
+        }
+        else if (cmd == "tile_set_walkable") {
+            int tile_id, walkable;
+            iss >> tile_id >> walkable;
+            if (tile_types.find(tile_id) != tile_types.end()) {
+                tile_types[tile_id].walkable = (walkable != 0);
+                send(client_sock, ("Tile " + to_string(tile_id) + " walkable set to " + (walkable ? "true" : "false") + "\n").c_str(), 0, 0);
+            }
+            else {
+                send(client_sock, "Tile ID not found.\n", 19, 0);
+            }
+        }
+        else if (cmd == "tile_set_on_enter") {
+            int tile_id;
+            string func;
+            iss >> tile_id >> func;
+            if (tile_types.find(tile_id) != tile_types.end()) {
+                tile_types[tile_id].on_enter = func;
+                send(client_sock, ("Tile " + to_string(tile_id) + " on_enter = " + func + "\n").c_str(), 0, 0);
+            }
+            else {
+                send(client_sock, "Tile ID not found.\n", 19, 0);
+            }
+        }
+        else if (cmd == "tile_set_on_exit") {
+            int tile_id;
+            string func;
+            iss >> tile_id >> func;
+            if (tile_types.find(tile_id) != tile_types.end()) {
+                tile_types[tile_id].on_exit = func;
+                send(client_sock, ("Tile " + to_string(tile_id) + " on_exit = " + func + "\n").c_str(), 0, 0);
+            }
+            else {
+                send(client_sock, "Tile ID not found.\n", 19, 0);
+            }
+        }
+        else if (cmd == "tile_set_on_step") {
+            int tile_id;
+            string func;
+            iss >> tile_id >> func;
+            if (tile_types.find(tile_id) != tile_types.end()) {
+                tile_types[tile_id].on_step = func;
+                send(client_sock, ("Tile " + to_string(tile_id) + " on_step = " + func + "\n").c_str(), 0, 0);
+            }
+            else {
+                send(client_sock, "Tile ID not found.\n", 19, 0);
+            }
+        }
+        else if (cmd == "tile_info") {
+            int tile_id;
+            iss >> tile_id;
+            auto it = tile_types.find(tile_id);
+            if (it != tile_types.end()) {
+                const Tile& t = it->second;
+                string info = "=== Tile ID " + to_string(t.id) + " ===\n";
+                info += "Walkable: " + string(t.walkable ? "yes" : "no") + "\n";
+                info += "on_enter: " + (t.on_enter.empty() ? "(none)" : t.on_enter) + "\n";
+                info += "on_exit: " + (t.on_exit.empty() ? "(none)" : t.on_exit) + "\n";
+                info += "on_step: " + (t.on_step.empty() ? "(none)" : t.on_step) + "\n";
+                info += "Display:\n" + t.display + "\n";
+                send(client_sock, info.c_str(), (int)info.size(), 0);
+            }
+            else {
+                send(client_sock, "Tile ID not found.\n", 19, 0);
+            }
+        }
+        else if (cmd == "tile_create") {
+            int tile_id;
+            iss >> tile_id;
+            if (tile_types.find(tile_id) == tile_types.end()) {
+                Tile new_tile;
+                new_tile.id = tile_id;
+                new_tile.walkable = true;
+                new_tile.display = "?";
+                tile_types[tile_id] = new_tile;
+                send(client_sock, ("Tile " + to_string(tile_id) + " created.\n").c_str(), 0, 0);
+            }
+            else {
+                send(client_sock, "Tile already exists.\n", 21, 0);
+            }
+        }
+        else if (cmd == "set_tile") {
+            int x, y, new_id;
+            if (!(iss >> x >> y >> new_id)) {
+                send(client_sock, "Usage: /set_tile <x> <y> <new_id>\n", 35, 0);
+                return;
+            }
+            int abs_x = map_center_x + x;
+            int abs_y = map_center_y - y;
+            if (abs_x < 0 || abs_x >= map_width || abs_y < 0 || abs_y >= map_height) {
+                send(client_sock, "Coordinates out of bounds.\n", 28, 0);
+                return;
+            }
+            set_tile(x, y, new_id); // но set_tile внутри снова проверит, можно убрать проверку внутри
+            send(client_sock, ("Tile at (" + to_string(x) + "," + to_string(y) + ") set to id " + to_string(new_id) + "\n").c_str(), 0, 0);
+        }
+        else if (cmd == "get_tile") {
+            int x, y;
+            if (!(iss >> x >> y)) {
+                send(client_sock, "Usage: /get_tile <x> <y>\n", 27, 0);
+                return;
+            }
+            int abs_x = map_center_x + x;
+            int abs_y = map_center_y - y;
+            if (abs_x < 0 || abs_x >= map_width || abs_y < 0 || abs_y >= map_height) {
+                send(client_sock, "Coordinates out of bounds.\n", 28, 0);
+                return;
+            }
+            int tid = world_map[abs_y][abs_x];
+            string info = "Tile at (" + to_string(x) + "," + to_string(y) + ") has id " + to_string(tid) + "\n";
+            auto it = tile_types.find(tid);
+            if (it != tile_types.end()) {
+                info += "Walkable: " + string(it->second.walkable ? "yes" : "no") + "\n";
+                info += "Display: " + it->second.display + "\n";
+            }
+            else {
+                info += "(No properties defined for this tile id)\n";
+            }
+            send(client_sock, info.c_str(), info.size(), 0);
+        }
+        else if (cmd == "fix_players") {
+            correct_all_players_positions();
+            send(client_sock, "All players' positions have been validated and corrected if needed.\n", 70, 0);
+        }
+        else if (cmd == "save_map") {
+            string filename;
+            iss >> filename;
+            if (filename.empty()) filename = "World.txt";
+            save_world_map(filename);
+            send(client_sock, ("World map saved to " + filename + "\n").c_str(), 0, 0);
+        }
+        else if (cmd == "reload_map") {
+            load_world_map("World.txt");
+            send(client_sock, "World map reloaded from World.txt\n", 35, 0);
         }
     }
     else {
@@ -865,7 +1407,7 @@ void save_game_state(const string& filename) {
             << player.max_hp << " "
             << player.x << " "
             << player.y << " "
-            << player.is_admin
+            << player.is_admin << " "
             << player.can_move;
 
 
@@ -965,6 +1507,8 @@ void load_game_state(const string& filename) {
         player.id = new_id;
         game_state.players[new_id] = player;
 
+        correct_all_players_positions();
+
         ConsoleHelper::SetColor(4);
         cout << "Loaded player: " << player.name
             << " (HP: " << player.hp << "/" << player.max_hp
@@ -994,8 +1538,9 @@ void auto_save_thread() {
         this_thread::sleep_for(chrono::minutes(15));
         if (game_state.is_active) {
             save_game_state("autosave.mcgsave");
+            save_tiles("autosave_tiles.mcgtile");
             ConsoleHelper::SetColor(10);
-            cout << "Auto-save completed" << endl;
+            cout << "Auto-save completed (game + tiles)" << endl;
             ConsoleHelper::SetColor(8);
         }
     }
@@ -1487,6 +2032,25 @@ void handle_client(SOCKET client_sock) {
                     player.is_admin = is_admin;
                     player.sock = client_sock;
                     apply_default_attrs(player);
+                    // Поиск стартовой позиции
+                    int start_x = 0, start_y = 0;
+                    if (is_walkable(start_x, start_y)) {
+                        player.x = start_x;
+                        player.y = start_y;
+                    }
+                    else {
+                        bool found = false;
+                        for (int dy = -map_center_y; dy <= (map_height - 1 - map_center_y) && !found; ++dy) {
+                            for (int dx = -map_center_x; dx <= (map_width - 1 - map_center_x) && !found; ++dx) {
+                                if (is_walkable(dx, dy)) {
+                                    start_x = dx; start_y = dy;
+                                    found = true;
+                                }
+                            }
+                        }
+                        player.x = start_x;
+                        player.y = start_y;
+                    }
                     bool player_exists = false;
                     for (auto& pair : game_state.players) {
                         if (pair.second.name == username) {
@@ -1529,9 +2093,9 @@ void handle_client(SOCKET client_sock) {
                     help_msg += "/rules - Show server rules\n";
                     {
                         lock_guard<mutex> lock(game_mutex);
-                        if (game_state.players.find(client_info[client_sock].second) != game_state.players.end()) {
+                        if (game_state.is_active == true && game_state.players.find(client_info[client_sock].second) != game_state.players.end()) {
                             help_msg += "==================--   Player's   --================\n";
-                            help_msg += "/move [direction] - [c8]Move (north, south, east, west)[/c8]\n";
+                            help_msg += "/move [direction] - [c8]Move (u - up, d - down, l - left, r - right)[/c8]\n";
                             help_msg += "/skip - [c8]Skip your turn[/c8]\n";
                             help_msg += "/status - [c8]Check your status[/c8]\n";
                             help_msg += "/map - [c8]Show game map[/c8]\n";
@@ -1606,6 +2170,21 @@ void handle_client(SOCKET client_sock) {
                         help_msg += "/lua_preset_save <name> - Save current active set as preset\n";
                         help_msg += "/lua_preset_load <name> - Load a preset (replaces active set)\n";
                         help_msg += "/lua_preset_list - List all saved presets\n";
+                        help_msg += "------------  Map commands  -------------\n";
+                        help_msg += "/save_tiles [file] - Save tile properties\n";
+                        help_msg += "/load_tiles [file] - Load tile properties\n";
+                        help_msg += "/tile_create <id> - Create new tile type\n";
+                        help_msg += "/tile_set_display <id> <text with \\n> - Set tile appearance (use \\n for newline)\n";
+                        help_msg += "/tile_set_walkable <id> <0/1> - Set walkable flag (0 - false, 1 - true)\n";
+                        help_msg += "/tile_set_on_enter <id> <lua_func> - Set on_enter handler\n";
+                        help_msg += "/tile_set_on_exit <id> <lua_func> - Set on_exit handler\n";
+                        help_msg += "/tile_set_on_step <id> <lua_func> - Set on_step handler (called each turn if player didn't move)\n";
+                        help_msg += "/tile_info <id> - Show tile details\n";
+                        help_msg += "/fix_players - Check and fix all players positions (to nearest walkable tile)\n";
+                        help_msg += "/set_tile <x> <y> <new_id> - Change tile at logical coordinates\n";
+                        help_msg += "/get_tile <x> <y> - Show tile info at logical coordinates\n";
+                        help_msg += "/save_map [filename] - Save current map to file (default: World.txt)\n";
+                        help_msg += "/reload_map - Reload World.txt map\n";
                     }
                     help_msg += "====-----          -----====\n";
                     send(client_sock, help_msg.c_str(), static_cast<int>(help_msg.length()), 0);
@@ -2127,6 +2706,11 @@ int main() {
     luaL_openlibs(gLuaState);   // открывает стандартные библиотеки Lua (math, string, table и т.д.)
     register_lua_functions();
     LoadLuaScripts();
+
+    // Загружаем карту
+    load_world_map("Default_World.txt");
+    // Пытаемся загрузить ранее сохранённые настройки тайлов (если есть)
+    load_tiles("autosave_tiles.mcgtile");
 
     while (true) {
         sockaddr_in client_addr;

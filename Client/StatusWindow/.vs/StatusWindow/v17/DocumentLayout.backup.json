@@ -1,0 +1,37 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\StatusWindow\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{BA19E88E-C6B1-4376-852F-41646DB9A393}|StatusWindow.vcxproj|C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\StatusWindow\\StatusWindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{BA19E88E-C6B1-4376-852F-41646DB9A393}|StatusWindow.vcxproj|solutionrelative:StatusWindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "StatusWindow.cpp",
+              "DocumentMoniker": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\StatusWindow\\StatusWindow.cpp",
+              "RelativeDocumentMoniker": "StatusWindow.cpp",
+              "ToolTip": "C:\\Users\\Student\\Documents\\GitHub\\MCG\\Client\\StatusWindow\\StatusWindow.cpp",
+              "RelativeToolTip": "StatusWindow.cpp",
+              "ViewState": "AgIAABIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-05-28T14:10:41.979Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
