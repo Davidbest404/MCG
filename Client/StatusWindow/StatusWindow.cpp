@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <thread>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -19,6 +20,23 @@
 #endif
 
 using namespace std;
+
+int LOCAL_PORT = 9090;
+
+bool is_valid_port(const string& port_str, int& port_out) {
+    if (port_str.empty()) return false;
+    try {
+        size_t pos;
+        int port = stoi(port_str, &pos);
+        if (pos != port_str.length()) return false;
+        if (port < 1 || port > 65535) return false;
+        port_out = port;
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+}
 
 // ------------------- Цветовой парсер (такой же) -------------------
 class ConsoleHelper {
@@ -103,6 +121,23 @@ void clear_screen() {
 }
 
 int main() {
+    int LPort;
+    string S_Port;
+    cout << "Now let's set your splitscreen port to make it able to connect to main Client\n";
+    cout << "Local server port (must be 1-65535): ";
+    getline(cin, S_Port);
+    if (S_Port.empty()) {
+        LPort = LOCAL_PORT;
+        cerr << "\nUsing default local port " << LPort << "\n";
+        this_thread::sleep_for(chrono::seconds(1));
+    }
+    else if (!is_valid_port(S_Port, LPort)) {
+        ConsoleHelper::SetColor(8);
+        cerr << "\n[ERROR] Invalid local port. Using default " << LOCAL_PORT << "\n";
+        LPort = LOCAL_PORT;
+        ConsoleHelper::ResetColor();
+    }
+    LOCAL_PORT = LPort;
 #ifdef _WIN32
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -123,7 +158,7 @@ int main() {
     sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(9090);
+    addr.sin_port = htons(LOCAL_PORT);
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     if (connect(sock, (sockaddr*)&addr, sizeof(addr)) < 0) {

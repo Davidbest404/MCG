@@ -267,6 +267,7 @@ int main() {
     }
     else if (answer == "Gen") {
         Write_txt("../../../Saved_data/Created_servers/" + folder + "/map/World.txt");
+        Sleep(15000);
         system("cls");
         Read_txt("../../../Saved_data/Created_servers/" + folder + "/map/World.txt");
         Sleep(1500);
