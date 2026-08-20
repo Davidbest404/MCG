@@ -1,0 +1,38 @@
+﻿  MCG_Server.cpp
+  ServerCommands.cpp
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(67,52): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(83,42): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(112,64): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(482,54): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+  ServerGame.cpp
+  ServerLua.cpp
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(16,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(24,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(25,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(35,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(43,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(44,16): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(55,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(63,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(64,11): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(72,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(80,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(81,11): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(89,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(100,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(109,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(117,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(147,11): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(148,11): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(149,16): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(168,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(169,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(170,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(171,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(178,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerLua.cpp(208,12): warning C4244: инициализация: преобразование "lua_Integer" в "int", возможна потеря данных
+  ServerNetwork.cpp
+  Создание кода...
+LINK : warning LNK4217: Символ "luaL_openselectedlibs", определенный в "linit.obj", импортирован "MCG_Server.obj" в функции "main".
+LINK : warning LNK4217: Символ "luaL_newstate", определенный в "lauxlib.obj", импортирован "MCG_Server.obj" в функции "main".
+  Server.vcxproj -> C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\x64\Debug\Server.exe
