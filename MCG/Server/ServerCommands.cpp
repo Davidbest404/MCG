@@ -7,8 +7,8 @@
 #include <sstream>
 #include <iostream>
 #include <thread>
-#include <fstream>      // <-- ДОБАВЛЕНО для ifstream/ofstream
-#include <algorithm>    // <-- ДОБАВЛЕНО для transform
+#include <fstream>
+#include <algorithm>
 #include <string>
 
 using namespace std;
@@ -27,9 +27,109 @@ extern string server_description, server_rules;
 extern mutex server_info_mutex;
 extern lua_State* gLuaState;
 extern map<int, Tile> tile_types;
+extern vector<SOCKET> clients;
+extern atomic<int> client_count;
+extern map<SOCKET, pair<string, int>> client_info;
+extern map<SOCKET, bool> admin_clients;
+extern string Name;
 
-// ----- Реализации команд -----
+// ----- Вспомогательная функция для формирования помощи -----
+string build_help_message(int player_id, bool is_admin) {
+    string help_msg = "\n[COMMAND]\n";
+    help_msg += "\n[c2][bgC]=== Available Commands ===[/bgC][/c2]\n";
+    help_msg += "/help - Show this message\n";
+    help_msg += "/list - List all connected clients\n";
+    help_msg += "/description - Show server description\n";
+    help_msg += "/rules - Show server rules\n";
 
+    // Игровые команды (доступны, если игра активна)
+    if (game_state.is_active && game_state.players.find(player_id) != game_state.players.end()) {
+        help_msg += "==================--   Player's   --================\n";
+        help_msg += "/move [direction] - [c8]Move (u - up, d - down, l - left, r - right)[/c8]\n";
+        help_msg += "/skip - [c8]Skip your turn[/c8]\n";
+        help_msg += "/status - [c8]Check your status[/c8]\n";
+        help_msg += "/map - [c8]Show game map[/c8]\n";
+        help_msg += "/ready - [c8]Mark yourself as ready[/c8]\n";
+        help_msg += "/unready - [c8]Mark yourself as not ready[/c8]\n";
+        help_msg += "/time_remaining - [c8]Check how much time left[/c8]\n";
+        help_msg += "/set_my_view_radius <radius> - [c8]Set your view radius (1-20)[/c8]\n";
+    }
+
+    // Динамические Lua-команды (активные)
+    if (!active_lua_commands.empty()) {
+        help_msg += "===--- Dynamic (Lua) Commands ---===\n";
+        lock_guard<mutex> lock(lua_commands_mutex);
+        for (const auto& cmd : active_lua_commands) {
+            help_msg += "/" + cmd;
+            {
+                lock_guard<mutex> desc_lock(lua_desc_mutex);
+                auto it = lua_command_descriptions.find(cmd);
+                if (it != lua_command_descriptions.end() && !it->second.empty())
+                    help_msg += " - " + it->second;
+            }
+            help_msg += "\n";
+        }
+    }
+
+    // Админские команды
+    if (is_admin) {
+        help_msg += "=====--  Admin's  --=====\n";
+        help_msg += "/kick [id] - Kick a client\n";
+        help_msg += "/name[new_name] - Change server name\n";
+        help_msg += "/max [number] - Change max clients\n";
+        help_msg += "/info - Show server info\n";
+        help_msg += "/edit_description <text with \\n> - Set server description (use \\n for newline)\n";
+        help_msg += "/edit_rules <text with \\n> - Set server rules (use \\n for newline)\n";
+        help_msg += "/clients - Show detailed client info\n";
+        help_msg += "/start_game - Start the game\n";
+        help_msg += "/pause_game - Pause the game\n";
+        help_msg += "/set_turn_time[seconds] - Set turn duration\n";
+        help_msg += "/end_turn - Force end current turn\n";
+        help_msg += "/set_can_move[id][true / false] - Allow or forbid movement for a player\n";
+        help_msg += "/save[filename] - Save game state\n";
+        help_msg += "/load [filename] - Load game state\n";
+        help_msg += "/reload_scripts - Reload Lua actions\n";
+        help_msg += "/add_item - add item\n";
+        help_msg += "/set_hp [target_id] [hp] - set HP to choosen target (if setted HP > then max HP of target it would change to max)\n";
+        help_msg += "/set_view_radius <player_id> <radius> - Set view radius for a player (1-20)\n";
+        help_msg += "/set_attr_all <attr_name> <value> - set attribute for ALL current players\n";
+        help_msg += "/set_attr <target_id> <attr_name> <value> - set attribute for specific player\n";
+        help_msg += "/get_attr <target_id> <attr_name> - get attribute value\n";
+        help_msg += "/has_attr <target_id> <attr_name> - check if attribute exists\n";
+        help_msg += "/remove_attr <target_id> <attr_name> - remove attribute from specific player\n";
+        help_msg += "/remove_attr_all <attr_name> - remove attribute from ALL players\n";
+        help_msg += "/default_attr_add <attr_name> <value> - add/modify default attribute for future players\n";
+        help_msg += "/default_attr_remove <attr_name> - remove default attribute\n";
+        help_msg += "/default_attr_list - list all default attributes\n";
+        help_msg += "/sync_default_attrs - apply current default attributes to all existing players\n";
+        help_msg += "/list_attrs [target_id] - list all attributes of a player (default: yourself)\n";
+        help_msg += "/lua_list - Show all Lua commands and their status\n";
+        help_msg += "/lua_enable <cmd> - Activate a Lua command\n";
+        help_msg += "/lua_disable <cmd> - Deactivate a Lua command\n";
+        help_msg += "/lua_preset_save <name> - Save current active set as preset\n";
+        help_msg += "/lua_preset_load <name> - Load a preset (replaces active set)\n";
+        help_msg += "/lua_preset_list - List all saved presets\n";
+        help_msg += "------------  Map commands  -------------\n";
+        help_msg += "/save_tiles [file] - Save tile properties\n";
+        help_msg += "/load_tiles [file] - Load tile properties\n";
+        help_msg += "/tile_create <id> - Create new tile type\n";
+        help_msg += "/tile_set_display <id> <text with \\n> - Set tile appearance (use \\n for newline)\n";
+        help_msg += "/tile_set_walkable <id> <0/1> - Set walkable flag (0 - false, 1 - true)\n";
+        help_msg += "/tile_set_on_enter <id> <lua_func> - Set on_enter handler\n";
+        help_msg += "/tile_set_on_exit <id> <lua_func> - Set on_exit handler\n";
+        help_msg += "/tile_set_on_step <id> <lua_func> - Set on_step handler (called each turn if player didn't move)\n";
+        help_msg += "/tile_info <id> - Show tile details\n";
+        help_msg += "/fix_players - Check and fix all players positions (to nearest walkable tile)\n";
+        help_msg += "/set_tile <x> <y> <new_id> - Change tile at logical coordinates\n";
+        help_msg += "/get_tile <x> <y> - Show tile info at logical coordinates\n";
+        help_msg += "/save_map [filename] - Save current map to file (default: world.txt)\n";
+        help_msg += "/reload_map - Reload world.txt map\n";
+    }
+    help_msg += "====-----          -----====\n";
+    return help_msg;
+}
+
+// ----- Реализация команд -----
 void process_game_command(SOCKET client_sock, const string& command, int player_id, bool is_admin) {
     if (!game_mutex.try_lock()) {
         send(client_sock, "Server is busy processing other commands. Please try again.\n", 68, 0);
@@ -37,8 +137,14 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     }
     unique_lock<mutex> lock(game_mutex, adopt_lock);
 
-    if (!game_state.is_active && command != "/start_game" &&
-        command.find("/set_") != 0 && command != "/status" && command != "/map") {
+    // Разрешаем определённые команды даже если игра не активна
+    bool is_allowed_always = (command == "/help" || command == "/list" ||
+        command == "/description" || command == "/rules" ||
+        command == "/status" || command == "/map" ||
+        command == "/set_my_view_radius" ||
+        command.find("/set_") == 0);
+
+    if (!game_state.is_active && !is_allowed_always && command != "/start_game") {
         send(client_sock, "Game is not active. Admin must start the game.\n", 52, 0);
         return;
     }
@@ -123,7 +229,37 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     lock.lock();
 
     // ----- Встроенные команды -----
-    if (cmd == "time_remaining") {
+    if (cmd == "help") {
+        string help_msg = build_help_message(player_id, is_admin);
+        send(client_sock, help_msg.c_str(), static_cast<int>(help_msg.length()), 0);
+    }
+    else if (cmd == "list") {
+        string list_msg = "\n=== Connected Clients (" + to_string(client_count) + ") ===\n";
+        for (auto& client : clients) {
+            if (client_info.find(client) != client_info.end()) {
+                auto& info = client_info[client];
+                list_msg += "ID: " + to_string(info.second) + " | Name: " + info.first;
+                if (admin_clients[client]) list_msg += " [ADMIN]";
+                {
+                    lock_guard<mutex> lock(game_mutex);
+                    if (game_state.players.find(info.second) != game_state.players.end()) {
+                        auto& player = game_state.players[info.second];
+                        list_msg += " | HP: " + to_string(player.hp) + "/" + to_string(player.max_hp);
+                    }
+                }
+                list_msg += "\n";
+            }
+        }
+        list_msg += "==============================\n";
+        send(client_sock, list_msg.c_str(), static_cast<int>(list_msg.length()), 0);
+    }
+    else if (cmd == "description") {
+        handle_description(client_sock);
+    }
+    else if (cmd == "rules") {
+        handle_rules(client_sock);
+    }
+    else if (cmd == "time_remaining") {
         send_time_remaining(client_sock);
     }
     else if (cmd == "move") {
@@ -247,50 +383,77 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         status += "Position: (" + to_string(player.x) + "," + to_string(player.y) + ")\n";
         status += "Can move: " + string(player.can_move ? "Yes" : "No") + "\n";
         status += "Ready: " + string(player.is_ready ? "Yes" : "No") + "\n";
+        status += "View radius: " + to_string(player.view_radius) + "\n";
         status += "==================\n";
         send(client_sock, status.c_str(), static_cast<int>(status.length()), 0);
     }
     else if (cmd == "map") {
-        string map_str = "[MAP]\n[c1][bg4] === Game Map === [/bg4][/c1]\n";
-        if (world_tiles.empty()) {
-            map_str += "(Map is empty)\n";
+        auto it_player = game_state.players.find(player_id);
+        if (it_player == game_state.players.end()) {
+            send(client_sock, "Player not found!\n", 19, 0);
+            return;
         }
-        else {
-            int min_x = INT_MAX, max_x = INT_MIN, min_y = INT_MAX, max_y = INT_MIN;
-            for (const auto& [key, tid] : world_tiles) {
-                int x = static_cast<int>(key >> 32);
-                int y = static_cast<int>(key & 0xFFFFFFFF);
-                min_x = min(min_x, x); max_x = max(max_x, x);
-                min_y = min(min_y, y); max_y = max(max_y, y);
-            }
-            min_x--; max_x++; min_y--; max_y++;
-            for (int y = max_y; y >= min_y; --y) {
-                for (int x = min_x; x <= max_x; ++x) {
-                    bool has_player = false;
-                    for (auto& pair : game_state.players) {
-                        if (pair.second.x == x && pair.second.y == y) {
-                            map_str += to_string(pair.second.id);
-                            has_player = true;
-                            break;
-                        }
-                    }
-                    if (!has_player) {
-                        int tid = get_tile_id(x, y);
-                        if (tid == 0) map_str += '.';
-                        else {
-                            char symbol = get_tile_char(tid);
-                            map_str += symbol;
-                        }
-                    }
-                    map_str += " ";
-                }
-                map_str += "\n";
+        Player& player = it_player->second;
+        int radius = player.view_radius;
+        int min_x = player.x - radius;
+        int max_x = player.x + radius;
+        int min_y = player.y - radius;
+        int max_y = player.y + radius;
+
+        // Формируем данные с ID игрока, координатами и радиусом
+        stringstream data;
+        data << "MAP_DATA|" << player_id << ";" << player.x << ";" << player.y << ";" << radius << "|";
+
+        // Добавляем всех игроков в пределах радиуса
+        for (auto& pair : game_state.players) {
+            int dx = pair.second.x - player.x;
+            int dy = pair.second.y - player.y;
+            if (abs(dx) <= radius && abs(dy) <= radius) {
+                data << pair.second.id << ";" << pair.second.x << ";" << pair.second.y << ";P|";
             }
         }
-        map_str += "================\n";
-        send(client_sock, map_str.c_str(), static_cast<int>(map_str.length()), 0);
+
+        // Добавляем тайлы в пределах радиуса
+        for (const auto& [key, tid] : world_tiles) {
+            int x = static_cast<int>(key >> 32);
+            int y = static_cast<int>(key & 0xFFFFFFFF);
+            int dx = x - player.x;
+            int dy = y - player.y;
+            if (abs(dx) <= radius && abs(dy) <= radius) {
+                char symbol = get_tile_char(tid);
+                data << tid << ";" << x << ";" << y << ";T:" << symbol << "|";
+            }
+        }
+
+        string map_data = data.str();
+        if (map_data.back() == '|')
+            map_data.pop_back();
+        map_data += "\n";
+
+        string full_msg = "[MAP]\n" + map_data;
+        send(client_sock, full_msg.c_str(), static_cast<int>(full_msg.length()), 0);
+        }
+    else if (cmd == "set_my_view_radius") {
+        int new_radius;
+        if (!(iss >> new_radius)) {
+            send(client_sock, "Usage: /set_my_view_radius <radius>\n", 37, 0);
+            return;
+        }
+        auto it = game_state.players.find(player_id);
+        if (it == game_state.players.end()) {
+            send(client_sock, "Player not found.\n", 19, 0);
+            return;
+        }
+        if (new_radius < 1 || new_radius > 20) {
+            send(client_sock, "Radius must be between 1 and 20.\n", 33, 0);
+            return;
+        }
+        it->second.view_radius = new_radius;
+        string msg = "Your view radius set to " + to_string(new_radius) + "\n";
+        send(client_sock, msg.c_str(), msg.size(), 0);
     }
     else if (is_admin) {
+        // Всё остальное – админские команды
         if (cmd == "start_game") {
             game_state.is_active = true;
             game_state.turn_start_time = time(nullptr);
@@ -331,6 +494,25 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
                 game_state.players[target_id].hp = hp;
                 send(client_sock, "HP set successfully.\n", 22, 0);
             }
+        }
+        else if (cmd == "set_view_radius") {
+            int target_id, new_radius;
+            if (!(iss >> target_id >> new_radius)) {
+                send(client_sock, "Usage: /set_view_radius <player_id> <radius>\n", 47, 0);
+                return;
+            }
+            auto it = game_state.players.find(target_id);
+            if (it == game_state.players.end()) {
+                send(client_sock, "Player not found.\n", 19, 0);
+                return;
+            }
+            if (new_radius < 1 || new_radius > 20) {
+                send(client_sock, "Radius must be between 1 and 20.\n", 33, 0);
+                return;
+            }
+            it->second.view_radius = new_radius;
+            string msg = "View radius for player " + to_string(target_id) + " set to " + to_string(new_radius) + "\n";
+            send(client_sock, msg.c_str(), msg.size(), 0);
         }
         else if (cmd == "reload_scripts") {
             LoadLuaScripts(gLuaState);
@@ -505,8 +687,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     }
 }
 
-// ----- Обработчики атрибутов -----
-
+// ----- Обработчики атрибутов (без изменений) -----
 void set_attr_for_all(const string& attr_name, const variant<int, float, string, bool>& value) {
     lock_guard<mutex> lock(game_mutex);
     for (auto& [id, player] : game_state.players) {

@@ -3,52 +3,52 @@
   "WorkspaceRootPath": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerCommands.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerCommands.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerGame.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerGame.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:MCG_Server.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerNetwork.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerNetwork.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerNetwork.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerNetwork.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerGame.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerGame.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerShared.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerShared.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerLua.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerLua.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerCommands.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerCommands.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerLua.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerLua.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerMap.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerMap.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerMap.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerMap.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerGame.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerGame.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerLua.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerLua.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerGame.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerGame.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerNetwork.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerNetwork.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerNetwork.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerNetwork.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerCommands.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerCommands.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerLua.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerLua.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerShared.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerShared.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerMap.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A98F9947-F283-412F-A5AF-58F730013D4A}|Server.vcxproj|solutionrelative:ServerMap.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
   "DocumentGroupContainers": [
@@ -58,32 +58,33 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 0,
+          "SelectedChildIndex": 1,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "MCG_Server.cpp",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\MCG_Server.cpp",
               "RelativeDocumentMoniker": "MCG_Server.cpp",
               "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\MCG_Server.cpp",
               "RelativeToolTip": "MCG_Server.cpp",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAQAAAAUAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-08-19T12:22:10.541Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 0,
               "Title": "ServerCommands.cpp",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerCommands.cpp",
               "RelativeDocumentMoniker": "ServerCommands.cpp",
               "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerCommands.cpp",
               "RelativeToolTip": "ServerCommands.cpp",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAKADAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAHkBAAAAAAAAAAAcwJYBAAAgAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-08-19T18:35:31.043Z"
+              "WhenOpened": "2026-08-19T18:35:31.043Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
@@ -95,23 +96,25 @@
               "RelativeToolTip": "ServerCommands.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAABoAAABNAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-08-19T18:35:21.271Z"
+              "WhenOpened": "2026-08-19T18:35:21.271Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 7,
               "Title": "ServerNetwork.cpp",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerNetwork.cpp",
               "RelativeDocumentMoniker": "ServerNetwork.cpp",
               "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerNetwork.cpp",
               "RelativeToolTip": "ServerNetwork.cpp",
-              "ViewState": "AgIAAJ4AAAAAAAAAAAAcwMUAAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAL4AAAA9AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-08-19T18:34:50.562Z"
+              "WhenOpened": "2026-08-19T18:34:50.562Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 6,
               "Title": "ServerNetwork.h",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerNetwork.h",
               "RelativeDocumentMoniker": "ServerNetwork.h",
@@ -119,23 +122,25 @@
               "RelativeToolTip": "ServerNetwork.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAUAAAAnAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-08-19T18:34:41.641Z"
+              "WhenOpened": "2026-08-19T18:34:41.641Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 5,
               "Title": "ServerGame.cpp",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerGame.cpp",
               "RelativeDocumentMoniker": "ServerGame.cpp",
               "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerGame.cpp",
               "RelativeToolTip": "ServerGame.cpp",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAcAAAATAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAF8AAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-08-19T18:34:27.605Z"
+              "WhenOpened": "2026-08-19T18:34:27.605Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 4,
               "Title": "ServerGame.h",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerGame.h",
               "RelativeDocumentMoniker": "ServerGame.h",
@@ -143,23 +148,25 @@
               "RelativeToolTip": "ServerGame.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAA0AAAAYAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-08-19T18:34:11.325Z"
+              "WhenOpened": "2026-08-19T18:34:11.325Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 3,
               "Title": "ServerMap.cpp",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerMap.cpp",
               "RelativeDocumentMoniker": "ServerMap.cpp",
               "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerMap.cpp",
               "RelativeToolTip": "ServerMap.cpp",
-              "ViewState": "AgIAAMkAAAAAAAAAAAAcwPAAAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAPAAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-08-19T18:33:53.629Z"
+              "WhenOpened": "2026-08-19T18:33:53.629Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 11,
               "Title": "ServerMap.h",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerMap.h",
               "RelativeDocumentMoniker": "ServerMap.h",
@@ -171,19 +178,19 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 10,
               "Title": "ServerShared.h",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerShared.h",
               "RelativeDocumentMoniker": "ServerShared.h",
               "ToolTip": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerShared.h",
               "RelativeToolTip": "ServerShared.h",
-              "ViewState": "AgIAADgAAAAAAAAAAAAcwF8AAAA9AAAAAAAAAA==",
+              "ViewState": "AgIAADkAAAAAAAAAAAAcwFQAAAAnAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
               "WhenOpened": "2026-08-19T12:22:12.221Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 9,
               "Title": "ServerLua.h",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerLua.h",
               "RelativeDocumentMoniker": "ServerLua.h",
@@ -195,7 +202,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 11,
+              "DocumentIndex": 2,
               "Title": "ServerLua.cpp",
               "DocumentMoniker": "C:\\Users\\\u0421\u0430\u043C\u0432\u0435\u043B\\Documents\\GitHub\\MCG\\MCG\\Server\\ServerLua.cpp",
               "RelativeDocumentMoniker": "ServerLua.cpp",
@@ -203,7 +210,8 @@
               "RelativeToolTip": "ServerLua.cpp",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-08-19T12:22:11.17Z"
+              "WhenOpened": "2026-08-19T12:22:11.17Z",
+              "EditorCaption": ""
             }
           ]
         }

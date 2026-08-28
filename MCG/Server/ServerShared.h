@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include <lua.hpp>
 #include <map>
 #include <vector>
 #include <string>
@@ -11,6 +10,7 @@
 #include <atomic>
 #include <ctime>
 #include <winsock2.h>
+#include <lua.hpp>
 
 using namespace std;
 
@@ -30,6 +30,7 @@ public:
     bool can_move = true;
     int x = 0, y = 0;
     int start_x, start_y;
+    int view_radius = 5;
     unordered_map<string, variant<int, float, string, bool>> attrs;
 
     template<typename T>

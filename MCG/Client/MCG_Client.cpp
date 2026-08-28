@@ -12,6 +12,8 @@
 #include <sstream>
 #include <algorithm>
 #include <memory>
+#include <chrono>
+#include <iomanip>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -33,14 +35,7 @@ int LOCAL_PORT = 9090;
 atomic<bool> running(true);
 atomic<bool> connected_to_game(false);
 atomic<bool> local_server_running(false);
-
-// Автообновления
-atomic<bool> auto_map_update(false);
-atomic<bool> auto_status_update(false);
-atomic<int> map_update_interval(5);
-atomic<int> status_update_interval(5);
-thread map_update_thread;
-thread status_update_thread;
+atomic<bool> show_coordinates(true);
 
 atomic<int> chat_windows_count(0);
 atomic<int> map_windows_count(0);
@@ -71,7 +66,41 @@ int color_remap[16];
 mutex bg_color_remap_mutex;
 int bg_color_remap[16];
 
-// Ремаппинг (использует hex_char_to_int из ColorParser)
+// ---------- Прототипы функций ----------
+bool safe_send(SOCKET sock, const string& data);
+string safe_receive(SOCKET sock, int timeout_ms = 1000);
+
+// ---------- Система биндов ----------
+struct Bind {
+    string command;
+    int interval;
+    chrono::steady_clock::time_point last_send;
+};
+map<string, Bind> binds;
+mutex binds_mutex;
+atomic<bool> binds_running(true);
+thread binds_thread;
+
+void binds_loop() {
+    while (binds_running && running) {
+        this_thread::sleep_for(chrono::seconds(1));
+        auto now = chrono::steady_clock::now();
+        lock_guard<mutex> lock(binds_mutex);
+        for (auto& [name, bind] : binds) {
+            if (bind.interval > 0 && connected_to_game) {
+                auto elapsed = chrono::duration_cast<chrono::seconds>(now - bind.last_send).count();
+                if (elapsed >= bind.interval) {
+                    if (game_socket != INVALID_SOCKET) {
+                        safe_send(game_socket, bind.command);
+                    }
+                    bind.last_send = now;
+                }
+            }
+        }
+    }
+}
+
+// ---------- Ремаппинг цветов ----------
 int get_remapped_color(char hex_char) {
     int idx = hex_char_to_int(hex_char);
     if (idx < 0 || idx >= 16) return idx;
@@ -86,20 +115,21 @@ int get_remapped_bg_color(char hex_char) {
     return bg_color_remap[idx];
 }
 
-// Безопасный вывод
+// ---------- Вывод ----------
 void output_message(const string& message) {
     lock_guard<mutex> lock(cout_mutex);
     print_colored_text(message);
     cout << endl;
 }
 
+// ---------- Сокеты ----------
 bool safe_send(SOCKET sock, const string& data) {
     if (sock == INVALID_SOCKET) return false;
     int result = send(sock, data.c_str(), static_cast<int>(data.size()), 0);
     return result > 0;
 }
 
-string safe_receive(SOCKET sock, int timeout_ms = 1000) {
+string safe_receive(SOCKET sock, int timeout_ms) {
     if (sock == INVALID_SOCKET) return "";
     DWORD timeout = timeout_ms;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
@@ -113,34 +143,7 @@ string safe_receive(SOCKET sock, int timeout_ms = 1000) {
     return "";
 }
 
-void auto_map_update_thread() {
-    while (running && auto_map_update) {
-        this_thread::sleep_for(chrono::seconds(map_update_interval));
-        if (connected_to_game && auto_map_update) {
-            safe_send(game_socket, "/map");
-        }
-    }
-}
-
-void auto_status_update_thread() {
-    while (running && auto_status_update) {
-        this_thread::sleep_for(chrono::seconds(status_update_interval));
-        if (connected_to_game && auto_status_update) {
-            safe_send(game_socket, "/status");
-        }
-    }
-}
-
-void stop_map_updates() {
-    auto_map_update = false;
-    if (map_update_thread.joinable()) map_update_thread.join();
-}
-
-void stop_status_updates() {
-    auto_status_update = false;
-    if (status_update_thread.joinable()) status_update_thread.join();
-}
-
+// ---------- Типы сообщений ----------
 enum class MessageType {
     CHAT_MESSAGE,
     MAP_UPDATE,
@@ -161,6 +164,7 @@ MessageType get_message_type(const string& message) {
     return MessageType::SYSTEM_MESSAGE;
 }
 
+// ---------- Отправка локальным клиентам ----------
 void send_to_local_clients(const string& message, ClientType target_type = ClientType::UNKNOWN) {
     bool sent = false;
     {
@@ -181,8 +185,164 @@ void send_to_local_clients(const string& message, ClientType target_type = Clien
     }
 }
 
+// ---------- Отрисовка карты с фиксированной шириной ячейки ----------
+void render_map_from_data(const string& data) {
+    const int CELL_WIDTH = 3; // фиксированная ширина для каждой ячейки
+
+    size_t pos1 = data.find('|');
+    if (pos1 == string::npos) return;
+    string player_info = data.substr(0, pos1);
+    string objects_str = data.substr(pos1 + 1);
+
+    vector<string> parts;
+    stringstream ps(player_info);
+    string part;
+    while (getline(ps, part, ';')) {
+        parts.push_back(part);
+    }
+    if (parts.size() < 3) return;
+    int my_id = stoi(parts[0]);
+    int player_x = stoi(parts[1]);
+    int player_y = stoi(parts[2]);
+    int radius = (parts.size() >= 4) ? stoi(parts[3]) : 10;
+
+    struct MapObject {
+        int id;
+        int x, y;
+        char type;
+        char symbol;
+    };
+    vector<MapObject> objects;
+
+    stringstream ss(objects_str);
+    string obj;
+    while (getline(ss, obj, '|')) {
+        if (obj.empty()) continue;
+        stringstream o(obj);
+        string id_str, x_str, y_str, type_str;
+        if (!getline(o, id_str, ';')) continue;
+        if (!getline(o, x_str, ';')) continue;
+        if (!getline(o, y_str, ';')) continue;
+        if (!getline(o, type_str)) continue;
+
+        MapObject mo;
+        mo.id = stoi(id_str);
+        mo.x = stoi(x_str);
+        mo.y = stoi(y_str);
+        if (type_str == "P") {
+            mo.type = 'P';
+            mo.symbol = 0;
+        }
+        else if (type_str.rfind("T:", 0) == 0) {
+            mo.type = 'T';
+            mo.symbol = type_str[2];
+        }
+        else {
+            continue;
+        }
+        objects.push_back(mo);
+    }
+
+    int min_x = player_x - radius;
+    int max_x = player_x + radius;
+    int min_y = player_y - radius;
+    int max_y = player_y + radius;
+
+    stringstream map_text;
+    map_text << "[MAP]\n[c1][bg4] === Game Map === [/bg4][/c1]\n";
+
+    // Функция для преобразования ID игрока в символ
+    auto id_to_char = [](int id) -> char {
+        if (id < 10) return '0' + id;
+        else if (id < 36) return 'A' + (id - 10);
+        else return '?';
+        };
+
+    // Верхняя строка с координатами X
+    if (show_coordinates) {
+        // Отступ для левой колонки (такой же, как ширина ячейки)
+        map_text << string(CELL_WIDTH, ' ');
+        for (int x = min_x; x <= max_x; ++x) {
+            // Выводим число с выравниванием по правому краю в ширину CELL_WIDTH
+            map_text << setw(CELL_WIDTH) << right << x;
+        }
+        map_text << "\n";
+    }
+
+    for (int y = max_y; y >= min_y; --y) {
+        // Левая колонка с координатой Y
+        if (show_coordinates) {
+            map_text << setw(CELL_WIDTH) << right << y << "  ";
+        }
+
+        for (int x = min_x; x <= max_x; ++x) {
+            char cell_char = '.';
+            bool is_current_player = false;
+            bool found = false;
+
+            for (const auto& obj : objects) {
+                if (obj.x == x && obj.y == y) {
+                    if (obj.type == 'P') {
+                        if (obj.id == my_id) {
+                            is_current_player = true;
+                        }
+                        cell_char = id_to_char(obj.id);
+                        found = true;
+                        break;
+                    }
+                    else if (obj.type == 'T') {
+                        cell_char = obj.symbol;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            // Формируем строку для ячейки с фиксированной шириной CELL_WIDTH
+            string cell_str;
+            if (is_current_player) {
+                // Выделяем текущего игрока цветом
+                cell_str = "[cA]" + string(1, cell_char) + "[/cA]";
+                // Добавляем пробелы до нужной ширины (после закрывающего тега)
+                int visible_len = 1; // только символ, теги невидимы
+                int spaces = CELL_WIDTH - visible_len;
+                cell_str += string(spaces, ' ');
+            }
+            else {
+                cell_str = string(1, cell_char) + string(CELL_WIDTH - 1, ' ');
+            }
+
+            map_text << cell_str;
+        }
+        map_text << "\n";
+    }
+
+    map_text << "================\n";
+    map_text << "[c8]Your position: (" << player_x << "," << player_y << ")[/c8]\n";
+    if (show_coordinates) {
+        map_text << "[c8]Coordinates shown.[/c8]\n";
+    }
+    else {
+        map_text << "[c8]Coordinates hidden (use //toggle_coords)[/c8]\n";
+    }
+
+    lock_guard<mutex> lock(cout_mutex);
+    print_colored_text(map_text.str());
+}
+
+// ---------- Обработка сообщений ----------
 void process_game_message(const string& message) {
     if (message.empty()) return;
+
+    if (message.find("[MAP]\nMAP_DATA|") != string::npos) {
+        size_t start = message.find("MAP_DATA|") + 9;
+        size_t end = message.find('\n', start);
+        if (end == string::npos) end = message.length();
+        string data = message.substr(start, end - start);
+        render_map_from_data(data);
+        return;
+    }
+
     MessageType type = get_message_type(message);
 
     bool has_local = false;
@@ -209,6 +369,7 @@ void process_game_message(const string& message) {
     }
 }
 
+// ---------- Приём от сервера ----------
 void receive_from_game_server() {
     char buffer[4096];
     while (running && connected_to_game) {
@@ -227,6 +388,7 @@ void receive_from_game_server() {
     }
 }
 
+// ---------- Подключение к серверу ----------
 bool connect_to_game_server(const string& ip_address, int& port) {
     game_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (game_socket == INVALID_SOCKET) {
@@ -259,6 +421,7 @@ bool connect_to_game_server(const string& ip_address, int& port) {
     return true;
 }
 
+// ---------- Локальный сервер для окон ----------
 void local_server() {
     SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket == INVALID_SOCKET) return;
@@ -322,6 +485,7 @@ void local_server() {
     closesocket(server_socket);
 }
 
+// ---------- Очистка локальных клиентов ----------
 void cleanup_local_clients() {
     lock_guard<mutex> lock(local_clients_mutex);
     for (auto& client : local_clients) {
@@ -335,6 +499,7 @@ void cleanup_local_clients() {
     local_clients.clear();
 }
 
+// ---------- Таблица цветов ----------
 void show_color_table() {
     const char* color_names[] = {
         "Black", "Blue", "Green", "Cyan", "Red", "Purple", "Brown", "Light gray",
@@ -367,6 +532,7 @@ void show_color_table() {
     cout << "Use //reset_colors to restore defaults.\n\n";
 }
 
+// ---------- Основной ввод команд ----------
 void input_loop() {
     cout << "Type '//help' for commands or '//windows' for window setup instructions.\n";
     while (running) {
@@ -385,6 +551,7 @@ void input_loop() {
         if (command.empty()) continue;
 
         if (command.find("//") == 0) {
+            // ---------- Внутренние команды клиента ----------
             if (command == "//exit") {
                 running = false;
                 break;
@@ -418,8 +585,6 @@ void input_loop() {
             }
             else if (command == "//disconnect") {
                 if (connected_to_game) {
-                    stop_map_updates();
-                    stop_status_updates();
                     closesocket(game_socket);
                     game_socket = INVALID_SOCKET;
                     connected_to_game = false;
@@ -473,14 +638,18 @@ void input_loop() {
                 cout << "//disconnect  - Disconnect from game server\n";
                 cout << "//windows     - Show window connection instructions\n";
                 cout << "//clients     - Show connected windows\n";
-                cout << "//map_upd [sec] - Toggle auto map update (with optional interval)\n";
-                cout << "//status_upd [sec] - Toggle auto status update\n";
-                cout << "   if you write nothing or 0 (or less) as [sec] - it would turn off auto update of map or status\n";
                 cout << "//change_colors  - Show color mapping table\n";
                 cout << "          add   [name] [code] - To remap a color\n";
                 cout << "//change_bg_colors  - Show color mapping table\n";
                 cout << "           add     [name] [code] - To remap a bg color\n";
                 cout << "//reset_colors   - Restore default color mapping\n";
+                cout << "//toggle_coords - Toggle coordinate display on map\n";
+                cout << "\n--- Bind commands ---\n";
+                cout << "//bind <name> <command> [interval] - Create a bind (command must start with /)\n";
+                cout << "   interval in seconds, if omitted – manual only (no timer)\n";
+                cout << "//unbind <name> - Remove a bind\n";
+                cout << "//binds        - List all binds\n";
+                cout << "//send <name>  - Send the bind command immediately\n";
                 cout << "=============================\n";
             }
             else if (command == "//clients") {
@@ -496,52 +665,122 @@ void input_loop() {
                 }
                 cout << "==========================\n\n";
             }
-            else if (command.find("//map_upd") == 0) {
-                string arg = command.size() > 8 ? command.substr(9) : "";
-                int interval = 0;
-                if (!arg.empty()) {
-                    try { interval = stoi(arg); }
-                    catch (...) { interval = 0; }
+            else if (command == "//toggle_coords") {
+                show_coordinates = !show_coordinates;
+                output_message("[SYSTEM] Coordinates " + string(show_coordinates ? "enabled" : "disabled"));
+            }
+            // ---------- Команды биндов ----------
+            else if (command.find("//bind") == 0) {
+                string rest = command.size() > 6 ? command.substr(7) : "";
+                size_t start = rest.find_first_not_of(" \t");
+                if (start == string::npos) {
+                    output_message("[ERROR] Usage: //bind <name> <command> [interval]");
+                    continue;
                 }
-                if (interval <= 0) {
-                    if (auto_map_update) {
-                        stop_map_updates();
-                        output_message("[SYSTEM] Auto map update stopped.");
+                rest = rest.substr(start);
+                stringstream ss(rest);
+                string name, cmd, interval_str;
+                if (!(ss >> name)) {
+                    output_message("[ERROR] Missing bind name");
+                    continue;
+                }
+                if (!(ss >> cmd)) {
+                    output_message("[ERROR] Missing command");
+                    continue;
+                }
+                if (cmd[0] != '/') cmd = "/" + cmd;
+                int interval = 0;
+                if (ss >> interval_str) {
+                    try {
+                        interval = stoi(interval_str);
+                        if (interval < 0) interval = 0;
                     }
-                    else output_message("[SYSTEM] Auto map update was already off.");
+                    catch (...) {
+                        output_message("[ERROR] Invalid interval, must be a positive number");
+                        continue;
+                    }
+                }
+
+                {
+                    lock_guard<mutex> lock(binds_mutex);
+                    Bind bind;
+                    bind.command = cmd;
+                    bind.interval = interval;
+                    bind.last_send = chrono::steady_clock::now();
+                    binds[name] = bind;
+                }
+                output_message("[SYSTEM] Bind '" + name + "' created: command = " + cmd + (interval > 0 ? ", interval = " + to_string(interval) + "s" : ", manual only"));
+            }
+            else if (command.find("//unbind") == 0) {
+                string name = command.size() > 8 ? command.substr(9) : "";
+                if (name.empty()) {
+                    output_message("[ERROR] Usage: //unbind <name>");
+                    continue;
+                }
+                bool erased = false;
+                {
+                    lock_guard<mutex> lock(binds_mutex);
+                    if (binds.erase(name)) erased = true;
+                }
+                if (erased) {
+                    output_message("[SYSTEM] Bind '" + name + "' removed.");
                 }
                 else {
-                    stop_map_updates();
-                    map_update_interval = interval;
-                    auto_map_update = true;
-                    map_update_thread = thread(auto_map_update_thread);
-                    map_update_thread.detach();
-                    output_message("[SYSTEM] Auto map update started (interval: " + to_string(interval) + "s)");
+                    output_message("[ERROR] Bind '" + name + "' not found.");
                 }
             }
-            else if (command.find("//status_upd") == 0) {
-                string arg = command.size() > 12 ? command.substr(13) : "";
-                int interval = 0;
-                if (!arg.empty()) {
-                    try { interval = stoi(arg); }
-                    catch (...) { interval = 0; }
-                }
-                if (interval <= 0) {
-                    if (auto_status_update) {
-                        stop_status_updates();
-                        output_message("[SYSTEM] Auto status update stopped.");
-                    }
-                    else output_message("[SYSTEM] Auto status update was already off.");
+            else if (command == "//binds") {
+                lock_guard<mutex> lock(binds_mutex);
+                if (binds.empty()) {
+                    cout << "No binds defined.\n";
                 }
                 else {
-                    stop_status_updates();
-                    status_update_interval = interval;
-                    auto_status_update = true;
-                    status_update_thread = thread(auto_status_update_thread);
-                    status_update_thread.detach();
-                    output_message("[SYSTEM] Auto status update started (interval: " + to_string(interval) + "s)");
+                    cout << "\n=== Active Binds ===\n";
+                    for (const auto& [name, bind] : binds) {
+                        cout << name << " : " << bind.command;
+                        if (bind.interval > 0) {
+                            cout << " (every " << bind.interval << "s)";
+                        }
+                        else {
+                            cout << " (manual only)";
+                        }
+                        cout << "\n";
+                    }
+                    cout << "====================\n";
                 }
             }
+            else if (command.find("//send") == 0) {
+                string name = command.size() > 6 ? command.substr(7) : "";
+                if (name.empty()) {
+                    output_message("[ERROR] Usage: //send <name>");
+                    continue;
+                }
+                bool found = false;
+                string cmd_to_send;
+                {
+                    lock_guard<mutex> lock(binds_mutex);
+                    auto it = binds.find(name);
+                    if (it != binds.end()) {
+                        cmd_to_send = it->second.command;
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    output_message("[ERROR] Bind '" + name + "' not found.");
+                    continue;
+                }
+                if (!connected_to_game) {
+                    output_message("[ERROR] Not connected to game server. Cannot send.");
+                    continue;
+                }
+                if (safe_send(game_socket, cmd_to_send)) {
+                    output_message("[SYSTEM] Sent command: " + cmd_to_send);
+                }
+                else {
+                    output_message("[ERROR] Failed to send command.");
+                }
+            }
+            // ---------- Цвета ----------
             else if (command.find("//change_colors") == 0) {
                 string rest = command.size() > 16 ? command.substr(16) : "";
                 size_t start = rest.find_first_not_of(" \t");
@@ -655,6 +894,7 @@ void input_loop() {
             }
         }
         else {
+            // Обычная команда на сервер
             if (!connected_to_game) {
                 output_message("[ERROR] Not connected to game server!\n");
                 output_message("Use //connect");
@@ -667,6 +907,7 @@ void input_loop() {
     }
 }
 
+// ---------- MAIN ----------
 int main() {
     ConsoleHelper::InitConsole();
     for (int i = 0; i < 16; ++i) {
@@ -745,6 +986,9 @@ int main() {
         return 1;
     }
 
+    // Запускаем поток биндов
+    binds_thread = thread(binds_loop);
+
     thread server_thread(local_server);
     input_loop();
 
@@ -754,6 +998,11 @@ int main() {
     cleanup_local_clients();
     if (game_socket != INVALID_SOCKET) closesocket(game_socket);
     if (server_thread.joinable()) server_thread.join();
+
+    // Останавливаем поток биндов
+    binds_running = false;
+    if (binds_thread.joinable()) binds_thread.join();
+
     network_cleanup();
 
     cout << "\nClient terminated.\n";

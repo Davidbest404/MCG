@@ -1,6 +1,4 @@
-﻿#define LUA_BUILD_AS_DLL
-
-#include "lua.hpp"
+﻿#include "lua.hpp"
 #include <iostream>
 #include <string>
 #include <thread>
