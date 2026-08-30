@@ -8,7 +8,7 @@
 #include <iostream>
 #include <algorithm>
 #include <thread>
-#include <sstream>    // <-- ДОБАВЛЕНО
+#include <sstream>
 
 using namespace std;
 
@@ -152,19 +152,9 @@ void handle_client(SOCKET client_sock) {
         string message(buffer);
         if (!message.empty()) {
             if (message[0] == '/') {
-                // Все команды отправляем в общий обработчик
                 int player_id = client_info[client_sock].second;
-                // Если команда /help, /list, /description, /rules – они обрабатываются в ServerCommands,
-                // но некоторые команды могут требовать специальной обработки (например, /kick – только админ).
-                // В ServerCommands.process_game_command уже есть вся логика, поэтому просто вызываем её.
-                if (game_state.players.find(player_id) != game_state.players.end() || message == "/help" || message == "/list" || message == "/description" || message == "/rules") {
-                    process_game_command(client_sock, message, player_id, is_admin);
-                }
-                else {
-                    // Если игрок не найден, но это не стандартная команда – сообщаем об ошибке
-                    string error = "[ERROR]|Unknown command. Type /help for available commands\n";
-                    send(client_sock, error.c_str(), static_cast<int>(error.length()), 0);
-                }
+                // Все команды отправляем в общий обработчик
+                process_game_command(client_sock, message, player_id, is_admin);
                 continue;
             }
             auto& info = client_info[client_sock];

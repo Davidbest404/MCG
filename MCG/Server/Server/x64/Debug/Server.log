@@ -1,8 +1,15 @@
 ﻿  ServerCommands.cpp
-C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(173,52): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
-C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(189,42): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
-C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(218,64): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
-C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(453,48): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
-C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(515,52): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
-C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(664,54): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(179,52): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(197,42): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(226,64): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(464,48): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(573,56): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(662,52): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(836,54): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(871,52): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(889,54): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(893,56): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(909,54): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(913,56): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\ServerCommands.cpp(928,56): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
   Server.vcxproj -> C:\Users\Самвел\Documents\GitHub\MCG\MCG\Server\x64\Debug\Server.exe

@@ -32,6 +32,9 @@ extern atomic<int> client_count;
 extern map<SOCKET, pair<string, int>> client_info;
 extern map<SOCKET, bool> admin_clients;
 extern string Name;
+extern int PORT;
+extern int max_clients;
+extern string Password;
 
 // ----- Вспомогательная функция для формирования помощи -----
 string build_help_message(int player_id, bool is_admin) {
@@ -74,56 +77,58 @@ string build_help_message(int player_id, bool is_admin) {
     // Админские команды
     if (is_admin) {
         help_msg += "=====--  Admin's  --=====\n";
-        help_msg += "/kick [id] - Kick a client\n";
-        help_msg += "/name[new_name] - Change server name\n";
-        help_msg += "/max [number] - Change max clients\n";
+        help_msg += "/kick <id> - Kick a client\n";
+        help_msg += "/name <new_name> - Change server name\n";
+        help_msg += "/max <number> - Change max clients\n";
         help_msg += "/info - Show server info\n";
+        help_msg += "/clients - Show detailed client info (including sockets)\n";
+        help_msg += "/set_can_move <player_id> <true/false> - Allow or forbid movement for a player\n";
+        help_msg += "/save [filename] - Save game state (default: game_save.mcgsave)\n";
+        help_msg += "/load [filename] - Load game state (default: game_save.mcgsave)\n";
         help_msg += "/edit_description <text with \\n> - Set server description (use \\n for newline)\n";
         help_msg += "/edit_rules <text with \\n> - Set server rules (use \\n for newline)\n";
-        help_msg += "/clients - Show detailed client info\n";
         help_msg += "/start_game - Start the game\n";
         help_msg += "/pause_game - Pause the game\n";
-        help_msg += "/set_turn_time[seconds] - Set turn duration\n";
+        help_msg += "/set_turn_time <seconds> - Set turn duration\n";
         help_msg += "/end_turn - Force end current turn\n";
-        help_msg += "/set_can_move[id][true / false] - Allow or forbid movement for a player\n";
-        help_msg += "/save[filename] - Save game state\n";
-        help_msg += "/load [filename] - Load game state\n";
         help_msg += "/reload_scripts - Reload Lua actions\n";
-        help_msg += "/add_item - add item\n";
-        help_msg += "/set_hp [target_id] [hp] - set HP to choosen target (if setted HP > then max HP of target it would change to max)\n";
+        help_msg += "/set_hp <target_id> <hp> - Set HP (capped at max_hp)\n";
         help_msg += "/set_view_radius <player_id> <radius> - Set view radius for a player (1-20)\n";
-        help_msg += "/set_attr_all <attr_name> <value> - set attribute for ALL current players\n";
-        help_msg += "/set_attr <target_id> <attr_name> <value> - set attribute for specific player\n";
-        help_msg += "/get_attr <target_id> <attr_name> - get attribute value\n";
-        help_msg += "/has_attr <target_id> <attr_name> - check if attribute exists\n";
-        help_msg += "/remove_attr <target_id> <attr_name> - remove attribute from specific player\n";
-        help_msg += "/remove_attr_all <attr_name> - remove attribute from ALL players\n";
-        help_msg += "/default_attr_add <attr_name> <value> - add/modify default attribute for future players\n";
-        help_msg += "/default_attr_remove <attr_name> - remove default attribute\n";
-        help_msg += "/default_attr_list - list all default attributes\n";
-        help_msg += "/sync_default_attrs - apply current default attributes to all existing players\n";
-        help_msg += "/list_attrs [target_id] - list all attributes of a player (default: yourself)\n";
-        help_msg += "/lua_list - Show all Lua commands and their status\n";
-        help_msg += "/lua_enable <cmd> - Activate a Lua command\n";
-        help_msg += "/lua_disable <cmd> - Deactivate a Lua command\n";
-        help_msg += "/lua_preset_save <name> - Save current active set as preset\n";
-        help_msg += "/lua_preset_load <name> - Load a preset (replaces active set)\n";
-        help_msg += "/lua_preset_list - List all saved presets\n";
-        help_msg += "------------  Map commands  -------------\n";
-        help_msg += "/save_tiles [file] - Save tile properties\n";
+        help_msg += "------------  Attributes  -------------\n";
+        help_msg += "/set_attr_all <attr_name> <value> - Set attribute for ALL current players\n";
+        help_msg += "/set_attr <target_id> <attr_name> <value> - Set attribute for specific player\n";
+        help_msg += "/get_attr <target_id> <attr_name> - Get attribute value\n";
+        help_msg += "/has_attr <target_id> <attr_name> - Check if attribute exists\n";
+        help_msg += "/remove_attr <target_id> <attr_name> - Remove attribute from specific player\n";
+        help_msg += "/remove_attr_all <attr_name> - Remove attribute from ALL players\n";
+        help_msg += "/default_attr_add <attr_name> <value> - Add/modify default attribute for future players\n";
+        help_msg += "/default_attr_remove <attr_name> - Remove default attribute\n";
+        help_msg += "/default_attr_list - List all default attributes\n";
+        help_msg += "/sync_default_attrs - Apply current default attributes to all existing players\n";
+        help_msg += "/list_attrs [target_id] - List all attributes of a player (default: yourself)\n";
+        help_msg += "------------  Map (tiles)  -------------\n";
+        help_msg += "/save_tiles [file] - Save tile properties (default: tiles.mcgtile)\n";
         help_msg += "/load_tiles [file] - Load tile properties\n";
         help_msg += "/tile_create <id> - Create new tile type\n";
         help_msg += "/tile_set_display <id> <text with \\n> - Set tile appearance (use \\n for newline)\n";
         help_msg += "/tile_set_walkable <id> <0/1> - Set walkable flag (0 - false, 1 - true)\n";
         help_msg += "/tile_set_on_enter <id> <lua_func> - Set on_enter handler\n";
         help_msg += "/tile_set_on_exit <id> <lua_func> - Set on_exit handler\n";
-        help_msg += "/tile_set_on_step <id> <lua_func> - Set on_step handler (called each turn if player didn't move)\n";
+        help_msg += "/tile_set_on_step <id> <lua_func> - Set on_step handler\n";
         help_msg += "/tile_info <id> - Show tile details\n";
-        help_msg += "/fix_players - Check and fix all players positions (to nearest walkable tile)\n";
         help_msg += "/set_tile <x> <y> <new_id> - Change tile at logical coordinates\n";
         help_msg += "/get_tile <x> <y> - Show tile info at logical coordinates\n";
-        help_msg += "/save_map [filename] - Save current map to file (default: world.txt)\n";
-        help_msg += "/reload_map - Reload world.txt map\n";
+        help_msg += "/fix_players - Check and fix all players positions (to nearest walkable tile)\n";
+        help_msg += "/save_map [filename] - Save current map (default: world.txt)\n";
+        help_msg += "/reload_map - Reload map from world.txt\n";
+        help_msg += "------------  Lua management  -------------\n";
+        help_msg += "/lua_list - Show all Lua commands and their status\n";
+        help_msg += "/lua_enable <cmd> - Activate a Lua command\n";
+        help_msg += "/lua_disable <cmd> - Deactivate a Lua command\n";
+        help_msg += "/lua_activate_all - Activate ALL Lua commands\n";
+        help_msg += "/lua_preset_save <name> - Save current active set as preset\n";
+        help_msg += "/lua_preset_load <name> - Load a preset (replaces active set)\n";
+        help_msg += "/lua_preset_list - List all saved presets\n";
     }
     help_msg += "====-----          -----====\n";
     return help_msg;
@@ -135,7 +140,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         send(client_sock, "Server is busy processing other commands. Please try again.\n", 68, 0);
         return;
     }
-    unique_lock<mutex> lock(game_mutex, adopt_lock);
+    unique_lock<mutex> lock(game_mutex, adopt_lock);  // блокировка удерживается до конца функции
 
     // Разрешаем определённые команды даже если игра не активна
     bool is_allowed_always = (command == "/help" || command == "/list" ||
@@ -159,6 +164,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     iss >> cmd;
 
     // ----- Динамические Lua-команды -----
+    // Освобождаем блокировку, чтобы Lua мог вызывать функции, которые тоже могут захватывать game_mutex
     lock.unlock();
 
     lua_getglobal(gLuaState, cmd.c_str());
@@ -172,6 +178,8 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             string err = "[ERROR]|Lua command '" + cmd + "' is currently disabled by admin.\n";
             send(client_sock, err.c_str(), err.size(), 0);
             lua_pop(gLuaState, 1);
+            // Возвращаем блокировку перед выходом
+            lock.lock();
             return;
         }
         lua_pushinteger(gLuaState, player_id);
@@ -220,12 +228,15 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             }
             lua_pop(gLuaState, 1);
         }
+        // Восстанавливаем блокировку
+        lock.lock();
         return;
     }
     else {
         lua_pop(gLuaState, 1);
     }
 
+    // Восстанавливаем блокировку
     lock.lock();
 
     // ----- Встроенные команды -----
@@ -241,7 +252,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
                 list_msg += "ID: " + to_string(info.second) + " | Name: " + info.first;
                 if (admin_clients[client]) list_msg += " [ADMIN]";
                 {
-                    lock_guard<mutex> lock(game_mutex);
+                    // game_mutex уже захвачен, безопасно обращаемся к game_state
                     if (game_state.players.find(info.second) != game_state.players.end()) {
                         auto& player = game_state.players[info.second];
                         list_msg += " | HP: " + to_string(player.hp) + "/" + to_string(player.max_hp);
@@ -314,8 +325,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
                 to_string(player.x) + "," + to_string(player.y) + ")\n";
             send(client_sock, response.c_str(), static_cast<int>(response.length()), 0);
             string broadcast_msg = player.name + " moved to " + direction + ".";
+            // Освобождаем блокировку перед broadcast, чтобы избежать дедлока
             lock.unlock();
             broadcast_message(broadcast_msg, client_sock);
+            lock.lock();
         }
     }
     else if (cmd == "skip") {
@@ -353,6 +366,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             lock.unlock();
             broadcast_message("All players are ready! Ending turn...", INVALID_SOCKET);
             process_turn_end();
+            lock.lock();
         }
     }
     else if (cmd == "unready") {
@@ -400,11 +414,9 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         int min_y = player.y - radius;
         int max_y = player.y + radius;
 
-        // Формируем данные с ID игрока, координатами и радиусом
         stringstream data;
         data << "MAP_DATA|" << player_id << ";" << player.x << ";" << player.y << ";" << radius << "|";
 
-        // Добавляем всех игроков в пределах радиуса
         for (auto& pair : game_state.players) {
             int dx = pair.second.x - player.x;
             int dy = pair.second.y - player.y;
@@ -413,7 +425,6 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             }
         }
 
-        // Добавляем тайлы в пределах радиуса
         for (const auto& [key, tid] : world_tiles) {
             int x = static_cast<int>(key >> 32);
             int y = static_cast<int>(key & 0xFFFFFFFF);
@@ -432,7 +443,7 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
 
         string full_msg = "[MAP]\n" + map_data;
         send(client_sock, full_msg.c_str(), static_cast<int>(full_msg.length()), 0);
-        }
+    }
     else if (cmd == "set_my_view_radius") {
         int new_radius;
         if (!(iss >> new_radius)) {
@@ -453,8 +464,133 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         send(client_sock, msg.c_str(), msg.size(), 0);
     }
     else if (is_admin) {
-        // Всё остальное – админские команды
-        if (cmd == "start_game") {
+        // ----- Админские команды -----
+        if (cmd == "kick") {
+            int kick_id;
+            if (!(iss >> kick_id)) {
+                send(client_sock, "Usage: /kick <player_id>\n", 26, 0);
+                return;
+            }
+            bool found = false;
+            for (auto& client : clients) {
+                if (client_info.find(client) != client_info.end() && client_info[client].second == kick_id) {
+                    if (!admin_clients[client]) {
+                        string kick_msg = "[SERVER] You have been kicked by admin";
+                        send(client, kick_msg.c_str(), static_cast<int>(kick_msg.length()), 0);
+                        closesocket(client);
+                        string notify = "[SERVER] Client ID " + to_string(kick_id) + " was kicked by admin";
+                        lock.unlock();
+                        broadcast_message(notify, INVALID_SOCKET);
+                        lock.lock();
+                        found = true;
+                        break;
+                    }
+                    else {
+                        send(client_sock, "Cannot kick another admin.\n", 28, 0);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) {
+                send(client_sock, "Client not found.\n", 19, 0);
+            }
+        }
+        else if (cmd == "name") {
+            string new_name;
+            if (!(iss >> new_name)) {
+                send(client_sock, "Usage: /name <new_name>\n", 25, 0);
+                return;
+            }
+            Name = new_name;
+            string notify = "[SERVER] Server name changed to: " + Name;
+            lock.unlock();
+            broadcast_message(notify, INVALID_SOCKET);
+            lock.lock();
+        }
+        else if (cmd == "max") {
+            int new_max;
+            if (!(iss >> new_max)) {
+                send(client_sock, "Usage: /max <number>\n", 22, 0);
+                return;
+            }
+            if (new_max > 0 && new_max < 1000) {
+                max_clients = new_max;
+                string notify = "[SERVER] Max clients changed to: " + to_string(max_clients);
+                lock.unlock();
+                broadcast_message(notify, INVALID_SOCKET);
+                lock.lock();
+            }
+            else {
+                send(client_sock, "Max clients must be between 1 and 1000.\n", 40, 0);
+            }
+        }
+        else if (cmd == "info") {
+            int minutes = static_cast<int>(game_state.turn_duration_seconds / 60);
+            int seconds = static_cast<int>(game_state.turn_duration_seconds - (minutes * 60));
+            string info_msg = "\n=== Server Information ===\n";
+            info_msg += "Name: " + Name + "\nPort: " + to_string(PORT) + "\n";
+            info_msg += "Max clients: " + to_string(max_clients) + "\n";
+            info_msg += "Connected clients: " + to_string(client_count) + "\n";
+            info_msg += "Config password: " + Password + "\n";
+            info_msg += "Game active: " + string(game_state.is_active ? "Yes" : "No") + "\n";
+            info_msg += "Current turn: " + to_string(game_state.current_turn) + "\n";
+            info_msg += "Turn duration: " + to_string(minutes) + "m " + to_string(seconds) + "s\n";
+            info_msg += "==========================\n";
+            send(client_sock, info_msg.c_str(), static_cast<int>(info_msg.length()), 0);
+        }
+        else if (cmd == "clients") {
+            string detailed_msg = "\n=== Detailed Client Information ===\n";
+            for (auto& client : clients) {
+                if (client_info.find(client) != client_info.end()) {
+                    auto& info = client_info[client];
+                    detailed_msg += "Socket: " + to_string(client) + " | ID: " + to_string(info.second) + " | Name: " + info.first;
+                    if (admin_clients[client]) detailed_msg += " [ADMIN]";
+                    detailed_msg += "\n";
+                }
+            }
+            detailed_msg += "===================================\n";
+            send(client_sock, detailed_msg.c_str(), static_cast<int>(detailed_msg.length()), 0);
+        }
+        else if (cmd == "set_can_move") {
+            int target_id;
+            string val;
+            if (!(iss >> target_id >> val)) {
+                send(client_sock, "Usage: /set_can_move <player_id> <true/false>\n", 48, 0);
+                return;
+            }
+            bool can_move;
+            if (val == "true") can_move = true;
+            else if (val == "false") can_move = false;
+            else {
+                send(client_sock, "Value must be true or false\n", 29, 0);
+                return;
+            }
+            auto it = game_state.players.find(target_id);
+            if (it != game_state.players.end()) {
+                it->second.can_move = can_move;
+                string msg = "Player " + to_string(target_id) + " can_move set to " + (can_move ? "true" : "false") + "\n";
+                send(client_sock, msg.c_str(), msg.size(), 0);
+            }
+            else {
+                send(client_sock, "Player not found\n", 18, 0);
+            }
+        }
+        else if (cmd == "save") {
+            string filename;
+            if (!(iss >> filename)) filename = "game_save.mcgsave";
+            // Запускаем в отдельном потоке, чтобы не держать блокировку
+            thread(save_game_state, filename).detach();
+            send(client_sock, "Saving game...\n", 15, 0);
+        }
+        else if (cmd == "load") {
+            string filename;
+            if (!(iss >> filename)) filename = "game_save.mcgsave";
+            // Запускаем в отдельном потоке
+            thread(load_game_state, filename).detach();
+            send(client_sock, "Loading game...\n", 16, 0);
+        }
+        else if (cmd == "start_game") {
             game_state.is_active = true;
             game_state.turn_start_time = time(nullptr);
             game_state.current_turn = 1;
@@ -466,33 +602,44 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             ConsoleHelper::SetColor(10);
             cout << "=== GAME STARTED ===\n";
             ConsoleHelper::SetColor(8);
+            lock.lock();
         }
         else if (cmd == "pause_game") {
             game_state.is_active = false;
             lock.unlock();
             broadcast_message("Game paused by admin.", INVALID_SOCKET);
+            lock.lock();
         }
         else if (cmd == "set_turn_time") {
             int seconds;
-            iss >> seconds;
+            if (!(iss >> seconds)) {
+                send(client_sock, "Usage: /set_turn_time <seconds>\n", 33, 0);
+                return;
+            }
             game_state.turn_duration_seconds = seconds;
             string broadcast_msg = "Turn duration set to " + to_string(seconds / 60) + " minutes and " + to_string(seconds - ((seconds / 60) * 60));
             lock.unlock();
             broadcast_message(broadcast_msg, INVALID_SOCKET);
+            lock.lock();
         }
         else if (cmd == "end_turn") {
             lock.unlock();
             process_turn_end();
-        }
-        else if (cmd == "add_item") {
-            send(client_sock, "Item added.\n", 12, 0);
+            lock.lock();
         }
         else if (cmd == "set_hp") {
             int target_id, hp;
-            iss >> target_id >> hp;
-            if (game_state.players.find(target_id) != game_state.players.end()) {
-                game_state.players[target_id].hp = hp;
+            if (!(iss >> target_id >> hp)) {
+                send(client_sock, "Usage: /set_hp <target_id> <hp>\n", 33, 0);
+                return;
+            }
+            auto it = game_state.players.find(target_id);
+            if (it != game_state.players.end()) {
+                it->second.hp = max(0, min(hp, it->second.max_hp));
                 send(client_sock, "HP set successfully.\n", 22, 0);
+            }
+            else {
+                send(client_sock, "Player not found.\n", 19, 0);
             }
         }
         else if (cmd == "set_view_radius") {
@@ -515,27 +662,34 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
             send(client_sock, msg.c_str(), msg.size(), 0);
         }
         else if (cmd == "reload_scripts") {
+            lock.unlock();  // освобождаем перед загрузкой скриптов
             LoadLuaScripts(gLuaState);
             send(client_sock, "Lua scripts reloaded.\n", 22, 0);
+            lock.lock();
         }
         else if (cmd == "save_tiles") {
             string filename;
-            iss >> filename;
-            if (filename.empty()) filename = "tiles.mcgtile";
+            if (!(iss >> filename)) filename = "tiles.mcgtile";
+            lock.unlock();
             save_tiles(filename);
             send(client_sock, ("Tiles saved to " + filename + "\n").c_str(), 0, 0);
+            lock.lock();
         }
         else if (cmd == "load_tiles") {
             string filename;
-            iss >> filename;
-            if (filename.empty()) filename = "tiles.mcgtile";
+            if (!(iss >> filename)) filename = "tiles.mcgtile";
+            lock.unlock();
             load_tiles(filename);
             send(client_sock, ("Tiles loaded from " + filename + "\n").c_str(), 0, 0);
+            lock.lock();
         }
         else if (cmd == "tile_set_display") {
             int tile_id;
             string display_str;
-            iss >> tile_id;
+            if (!(iss >> tile_id)) {
+                send(client_sock, "Usage: /tile_set_display <id> <text>\n", 38, 0);
+                return;
+            }
             getline(iss, display_str);
             if (!display_str.empty() && display_str[0] == ' ') display_str.erase(0, 1);
             if (tile_types.find(tile_id) != tile_types.end()) {
@@ -553,7 +707,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         }
         else if (cmd == "tile_set_walkable") {
             int tile_id, walkable;
-            iss >> tile_id >> walkable;
+            if (!(iss >> tile_id >> walkable)) {
+                send(client_sock, "Usage: /tile_set_walkable <id> <0/1>\n", 38, 0);
+                return;
+            }
             if (tile_types.find(tile_id) != tile_types.end()) {
                 tile_types[tile_id].walkable = (walkable != 0);
                 send(client_sock, ("Tile " + to_string(tile_id) + " walkable set to " + (walkable ? "true" : "false") + "\n").c_str(), 0, 0);
@@ -565,7 +722,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         else if (cmd == "tile_set_on_enter") {
             int tile_id;
             string func;
-            iss >> tile_id >> func;
+            if (!(iss >> tile_id >> func)) {
+                send(client_sock, "Usage: /tile_set_on_enter <id> <lua_func>\n", 43, 0);
+                return;
+            }
             if (tile_types.find(tile_id) != tile_types.end()) {
                 tile_types[tile_id].on_enter = func;
                 send(client_sock, ("Tile " + to_string(tile_id) + " on_enter = " + func + "\n").c_str(), 0, 0);
@@ -577,7 +737,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         else if (cmd == "tile_set_on_exit") {
             int tile_id;
             string func;
-            iss >> tile_id >> func;
+            if (!(iss >> tile_id >> func)) {
+                send(client_sock, "Usage: /tile_set_on_exit <id> <lua_func>\n", 42, 0);
+                return;
+            }
             if (tile_types.find(tile_id) != tile_types.end()) {
                 tile_types[tile_id].on_exit = func;
                 send(client_sock, ("Tile " + to_string(tile_id) + " on_exit = " + func + "\n").c_str(), 0, 0);
@@ -589,7 +752,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         else if (cmd == "tile_set_on_step") {
             int tile_id;
             string func;
-            iss >> tile_id >> func;
+            if (!(iss >> tile_id >> func)) {
+                send(client_sock, "Usage: /tile_set_on_step <id> <lua_func>\n", 42, 0);
+                return;
+            }
             if (tile_types.find(tile_id) != tile_types.end()) {
                 tile_types[tile_id].on_step = func;
                 send(client_sock, ("Tile " + to_string(tile_id) + " on_step = " + func + "\n").c_str(), 0, 0);
@@ -600,7 +766,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         }
         else if (cmd == "tile_info") {
             int tile_id;
-            iss >> tile_id;
+            if (!(iss >> tile_id)) {
+                send(client_sock, "Usage: /tile_info <id>\n", 24, 0);
+                return;
+            }
             auto it = tile_types.find(tile_id);
             if (it != tile_types.end()) {
                 const Tile& t = it->second;
@@ -618,7 +787,10 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         }
         else if (cmd == "tile_create") {
             int tile_id;
-            iss >> tile_id;
+            if (!(iss >> tile_id)) {
+                send(client_sock, "Usage: /tile_create <id>\n", 26, 0);
+                return;
+            }
             if (tile_types.find(tile_id) == tile_types.end()) {
                 Tile new_tile;
                 new_tile.id = tile_id;
@@ -669,14 +841,191 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
         }
         else if (cmd == "save_map") {
             string filename;
-            iss >> filename;
-            if (filename.empty()) filename = "world.txt";
+            if (!(iss >> filename)) filename = "world.txt";
+            lock.unlock();
             save_world_map(filename);
             send(client_sock, ("World map saved to " + filename + "\n").c_str(), 0, 0);
+            lock.lock();
         }
         else if (cmd == "reload_map") {
+            lock.unlock();
             load_world_map("world.txt");
             send(client_sock, "World map reloaded from world.txt\n", 35, 0);
+            lock.lock();
+        }
+        else if (cmd == "lua_list") {
+            lock_guard<mutex> lock(lua_commands_mutex);
+            string msg = "\n=== Lua Commands Status ===\n";
+            for (const auto& cmd_name : available_lua_commands) {
+                msg += (active_lua_commands.count(cmd_name) ? "[ACTIVE] " : "[INACTIVE] ");
+                msg += cmd_name;
+                {
+                    lock_guard<mutex> desc_lock(lua_desc_mutex);
+                    auto it = lua_command_descriptions.find(cmd_name);
+                    if (it != lua_command_descriptions.end() && !it->second.empty())
+                        msg += " - " + it->second;
+                }
+                msg += "\n";
+            }
+            msg += "==========================\n";
+            send(client_sock, msg.c_str(), msg.size(), 0);
+        }
+        else if (cmd == "lua_enable") {
+            string cmd_name;
+            if (!(iss >> cmd_name)) {
+                send(client_sock, "Usage: /lua_enable <command_name>\n", 35, 0);
+                return;
+            }
+            bool success = false;
+            {
+                lock_guard<mutex> lock(lua_commands_mutex);
+                if (available_lua_commands.count(cmd_name)) {
+                    active_lua_commands.insert(cmd_name);
+                    success = true;
+                }
+            }
+            if (success) {
+                string ok = "Lua command '" + cmd_name + "' is now ACTIVE.\n";
+                send(client_sock, ok.c_str(), ok.size(), 0);
+            }
+            else {
+                string err = "[ERROR] Lua command '" + cmd_name + "' not found.\n";
+                send(client_sock, err.c_str(), err.size(), 0);
+            }
+        }
+        else if (cmd == "lua_disable") {
+            string cmd_name;
+            if (!(iss >> cmd_name)) {
+                send(client_sock, "Usage: /lua_disable <command_name>\n", 36, 0);
+                return;
+            }
+            bool removed = false;
+            {
+                lock_guard<mutex> lock(lua_commands_mutex);
+                removed = (active_lua_commands.erase(cmd_name) > 0);
+            }
+            if (removed) {
+                string ok = "Lua command '" + cmd_name + "' is now INACTIVE.\n";
+                send(client_sock, ok.c_str(), ok.size(), 0);
+            }
+            else {
+                string err = "[ERROR] Lua command '" + cmd_name + "' is not active.\n";
+                send(client_sock, err.c_str(), err.size(), 0);
+            }
+        }
+        else if (cmd == "lua_activate_all") {
+            lock_guard<mutex> lock(lua_commands_mutex);
+            if (available_lua_commands.empty()) {
+                send(client_sock, "No Lua commands available to activate.\n", 39, 0);
+            }
+            else {
+                int count = 0;
+                for (const auto& cmd_name : available_lua_commands) {
+                    active_lua_commands.insert(cmd_name);
+                    count++;
+                }
+                string msg = "Activated " + to_string(count) + " Lua commands.\n";
+                send(client_sock, msg.c_str(), msg.size(), 0);
+            }
+        }
+        else if (cmd == "lua_preset_save") {
+            string preset_name;
+            if (!(iss >> preset_name)) {
+                send(client_sock, "Usage: /lua_preset_save <preset_name>\n", 39, 0);
+                return;
+            }
+            if (preset_name.find_first_of("\\/:*?\"<>|") != string::npos) {
+                send(client_sock, "[ERROR] Invalid preset name.\n", 29, 0);
+                return;
+            }
+            string error_msg;
+            if (save_lua_preset(preset_name, error_msg)) {
+                string ok = "[OK] Preset '" + preset_name + "' saved.\n";
+                send(client_sock, ok.c_str(), (int)ok.size(), 0);
+            }
+            else {
+                string err = "[ERROR] " + error_msg + "\n";
+                send(client_sock, err.c_str(), (int)err.size(), 0);
+            }
+        }
+        else if (cmd == "lua_preset_load") {
+            string preset_name;
+            if (!(iss >> preset_name)) {
+                send(client_sock, "Usage: /lua_preset_load <preset_name>\n", 39, 0);
+                return;
+            }
+            if (preset_name.find_first_of("\\/:*?\"<>|") != string::npos) {
+                send(client_sock, "[ERROR] Invalid preset name.\n", 29, 0);
+                return;
+            }
+            string error_msg;
+            if (load_lua_preset(preset_name, error_msg)) {
+                string ok = "[OK] Preset '" + preset_name + "' loaded. Use /lua_list to see active commands.\n";
+                send(client_sock, ok.c_str(), (int)ok.size(), 0);
+            }
+            else {
+                string err = "[ERROR] " + error_msg + "\n";
+                send(client_sock, err.c_str(), (int)err.size(), 0);
+            }
+        }
+        else if (cmd == "lua_preset_list") {
+            CreateDirectoryA("presets", NULL);
+            WIN32_FIND_DATAA findData;
+            HANDLE hFind = FindFirstFileA("presets/*.mcglua", &findData);
+            if (hFind == INVALID_HANDLE_VALUE) {
+                send(client_sock, "No presets found.\n", 18, 0);
+                return;
+            }
+            string msg = "\n=== Available Presets ===\n";
+            do {
+                string fname = findData.cFileName;
+                size_t dot = fname.find_last_of('.');
+                if (dot != string::npos) fname = fname.substr(0, dot);
+                msg += fname + "\n";
+            } while (FindNextFileA(hFind, &findData));
+            FindClose(hFind);
+            msg += "=========================\n";
+            send(client_sock, msg.c_str(), (int)msg.size(), 0);
+        }
+        // ----- Обработчики атрибутов (вызовы) -----
+        else if (cmd == "set_attr_all") {
+            handle_set_attr_all(client_sock, command);
+        }
+        else if (cmd == "set_attr") {
+            handle_set_attr(client_sock, command, player_id, is_admin);
+        }
+        else if (cmd == "get_attr") {
+            handle_get_attr(client_sock, command);
+        }
+        else if (cmd == "has_attr") {
+            handle_has_attr(client_sock, command);
+        }
+        else if (cmd == "remove_attr") {
+            handle_remove_attr(client_sock, command, player_id, is_admin);
+        }
+        else if (cmd == "remove_attr_all") {
+            handle_remove_attr_all(client_sock, command);
+        }
+        else if (cmd == "default_attr_add") {
+            handle_default_attr_add(client_sock, command);
+        }
+        else if (cmd == "default_attr_remove") {
+            handle_default_attr_remove(client_sock, command);
+        }
+        else if (cmd == "default_attr_list") {
+            handle_default_attr_list(client_sock);
+        }
+        else if (cmd == "sync_default_attrs") {
+            handle_sync_default_attrs(client_sock);
+        }
+        else if (cmd == "list_attrs") {
+            handle_list_attrs(client_sock, command, player_id);
+        }
+        else if (cmd == "edit_description") {
+            handle_edit_description(client_sock, command);
+        }
+        else if (cmd == "edit_rules") {
+            handle_edit_rules(client_sock, command);
         }
         else {
             send(client_sock, "Unknown admin command.\n", 24, 0);
@@ -685,11 +1034,12 @@ void process_game_command(SOCKET client_sock, const string& command, int player_
     else {
         send(client_sock, "Unknown command. Type /help for available commands.\n", 55, 0);
     }
+    // Блокировка автоматически освободится при выходе
 }
 
-// ----- Обработчики атрибутов (без изменений) -----
+// ----- Обработчики атрибутов (без блокировки game_mutex, так как она уже захвачена) -----
 void set_attr_for_all(const string& attr_name, const variant<int, float, string, bool>& value) {
-    lock_guard<mutex> lock(game_mutex);
+    // предполагаем, что game_mutex уже захвачен
     for (auto& [id, player] : game_state.players) {
         player.setAttr(attr_name, value);
     }
@@ -712,6 +1062,7 @@ variant<int, float, string, bool> parse_value(const string& value_str) {
 }
 
 void handle_set_attr_all(SOCKET client_sock, const string& command) {
+    // game_mutex уже захвачен
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
@@ -728,6 +1079,7 @@ void handle_set_attr_all(SOCKET client_sock, const string& command) {
 }
 
 void handle_set_attr(SOCKET client_sock, const string& command, int caller_id, bool is_admin) {
+    // game_mutex уже захвачен
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
@@ -738,7 +1090,6 @@ void handle_set_attr(SOCKET client_sock, const string& command, int caller_id, b
         send(client_sock, err.c_str(), (int)err.size(), 0);
         return;
     }
-    lock_guard<mutex> lock(game_mutex);
     auto it = game_state.players.find(target_id);
     if (it == game_state.players.end()) {
         string err = "[ERROR]|Player not found\n";
@@ -757,6 +1108,7 @@ void handle_set_attr(SOCKET client_sock, const string& command, int caller_id, b
 }
 
 void handle_get_attr(SOCKET client_sock, const string& command) {
+    // game_mutex уже захвачен
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
@@ -767,7 +1119,6 @@ void handle_get_attr(SOCKET client_sock, const string& command) {
         send(client_sock, err.c_str(), (int)err.size(), 0);
         return;
     }
-    lock_guard<mutex> lock(game_mutex);
     auto it = game_state.players.find(target_id);
     if (it == game_state.players.end()) {
         string err = "[ERROR]|Player not found\n";
@@ -790,6 +1141,7 @@ void handle_get_attr(SOCKET client_sock, const string& command) {
 }
 
 void handle_has_attr(SOCKET client_sock, const string& command) {
+    // game_mutex уже захвачен
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
@@ -800,7 +1152,6 @@ void handle_has_attr(SOCKET client_sock, const string& command) {
         send(client_sock, err.c_str(), (int)err.size(), 0);
         return;
     }
-    lock_guard<mutex> lock(game_mutex);
     auto it = game_state.players.find(target_id);
     if (it == game_state.players.end()) {
         string err = "[ERROR]|Player not found\n";
@@ -814,6 +1165,7 @@ void handle_has_attr(SOCKET client_sock, const string& command) {
 }
 
 void handle_remove_attr(SOCKET client_sock, const string& command, int caller_id, bool is_admin) {
+    // game_mutex уже захвачен
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
@@ -824,7 +1176,6 @@ void handle_remove_attr(SOCKET client_sock, const string& command, int caller_id
         send(client_sock, err.c_str(), (int)err.size(), 0);
         return;
     }
-    lock_guard<mutex> lock(game_mutex);
     auto it = game_state.players.find(target_id);
     if (it == game_state.players.end()) {
         string err = "[ERROR]|Player not found\n";
@@ -847,6 +1198,7 @@ void handle_remove_attr(SOCKET client_sock, const string& command, int caller_id
 }
 
 void handle_remove_attr_all(SOCKET client_sock, const string& command) {
+    // game_mutex уже захвачен
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
@@ -862,6 +1214,7 @@ void handle_remove_attr_all(SOCKET client_sock, const string& command) {
 }
 
 void handle_default_attr_add(SOCKET client_sock, const string& command) {
+    // default_attrs_mutex отдельный, game_mutex не трогаем
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
@@ -925,8 +1278,9 @@ void handle_default_attr_list(SOCKET client_sock) {
 }
 
 void handle_sync_default_attrs(SOCKET client_sock) {
+    // Захватываем default_attrs_mutex, game_mutex уже захвачен
     lock_guard<mutex> lock_def(default_attrs_mutex);
-    lock_guard<mutex> lock_game(game_mutex);
+    // game_mutex уже захвачен в вызывающем коде
 
     if (default_attrs.empty()) {
         string msg = "No default attributes set. Nothing to sync.\n";
@@ -947,13 +1301,14 @@ void handle_sync_default_attrs(SOCKET client_sock) {
 }
 
 void handle_list_attrs(SOCKET client_sock, const string& command, int caller_id) {
+    // game_mutex уже захвачен
     istringstream iss(command.substr(1));
     string cmd;
     iss >> cmd;
     int target_id = caller_id;
     if (!(iss >> target_id)) {
+        // оставляем caller_id
     }
-    lock_guard<mutex> lock(game_mutex);
     auto it = game_state.players.find(target_id);
     if (it == game_state.players.end()) {
         string err = "[ERROR]|Player not found\n";
@@ -979,6 +1334,7 @@ void handle_list_attrs(SOCKET client_sock, const string& command, int caller_id)
     send(client_sock, msg.c_str(), (int)msg.size(), 0);
 }
 
+// ----- Остальные обработчики (не используют game_mutex) -----
 void handle_edit_description(SOCKET client_sock, const string& command) {
     string text = command.substr(17);
     if (text.empty()) {

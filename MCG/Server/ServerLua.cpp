@@ -1,5 +1,5 @@
 ﻿#include "ServerLua.h"
-#include "ServerShared.h"          // <-- теперь видит все типы
+#include "ServerShared.h"
 #include "../Common/ConsoleHelper.h"
 #include <iostream>
 #include <mutex>
@@ -224,6 +224,33 @@ static int lua_set_attr(lua_State* L) {
     return 0;
 }
 
+// ----- Новая функция: получить все атрибуты -----
+static int lua_get_all_attrs(lua_State* L) {
+    int id = luaL_checkinteger(L, 1);
+    lock_guard<mutex> lock(game_mutex);
+    auto it = game_state.players.find(id);
+    if (it == game_state.players.end()) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_newtable(L);
+    for (const auto& [key, val] : it->second.attrs) {
+        lua_pushstring(L, key.c_str());
+        if (holds_alternative<int>(val))
+            lua_pushinteger(L, get<int>(val));
+        else if (holds_alternative<float>(val))
+            lua_pushnumber(L, get<float>(val));
+        else if (holds_alternative<string>(val))
+            lua_pushstring(L, get<string>(val).c_str());
+        else if (holds_alternative<bool>(val))
+            lua_pushboolean(L, get<bool>(val));
+        else
+            lua_pushnil(L);
+        lua_settable(L, -3);
+    }
+    return 1;
+}
+
 // ---------- Регистрация функций ----------
 void register_lua_functions(lua_State* L) {
     lua_register(L, "get_hp", lua_get_hp);
@@ -244,6 +271,7 @@ void register_lua_functions(lua_State* L) {
     lua_register(L, "get_distance", lua_get_distance);
     lua_register(L, "get_attr", lua_get_attr);
     lua_register(L, "set_attr", lua_set_attr);
+    lua_register(L, "get_all_attrs", lua_get_all_attrs);   // <-- новая функция
 }
 
 // ---------- Загрузка Lua-скриптов ----------
