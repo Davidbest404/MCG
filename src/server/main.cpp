@@ -19,11 +19,11 @@ int main(int argc, char** argv)
     MCG_INFO("MCG server starting (Phase 6 — UI & Procedural World)");
 
     uint16_t port = 0;
-    uint32_t seed = 0; // 0 означает "сгенерировать случайный"
+    uint32_t seed = 0;
     bool fog_enabled = true;
     bool port_provided = false;
+    bool seed_provided = false;
 
-    // Парсим аргументы командной строки
     for (int i = 1; i < argc; ++i)
     {
         std::string arg = argv[i];
@@ -35,6 +35,7 @@ int main(int argc, char** argv)
         else if (arg == "--seed" && i + 1 < argc)
         {
             seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+            seed_provided = true;
         }
         else if (arg == "--no-fog")
         {
@@ -42,7 +43,6 @@ int main(int argc, char** argv)
         }
     }
 
-    // Если порт не передан, спрашиваем интерактивно
     if (!port_provided)
     {
         std::cout << "Enter port to listen on (default 7777, 0 for any free port): ";
@@ -52,13 +52,10 @@ int main(int argc, char** argv)
         {
             try
             {
-                int val = std::stoi(input);
-                if (val < 0 || val > 65535) throw std::out_of_range("port out of range");
-                port = static_cast<uint16_t>(val);
+                port = static_cast<uint16_t>(std::stoi(input));
             }
             catch (...)
             {
-                MCG_WARN("Invalid input, defaulting to 7777");
                 port = 7777;
             }
         }
@@ -68,7 +65,24 @@ int main(int argc, char** argv)
         }
     }
 
-    // Если сид не указан, генерируем случайный
+    if (!seed_provided)
+    {
+        std::cout << "Enter world seed (default random): ";
+        std::string input;
+        std::getline(std::cin, input);
+        if (!input.empty())
+        {
+            try
+            {
+                seed = static_cast<uint32_t>(std::stoul(input));
+            }
+            catch (...)
+            {
+                seed = 0;
+            }
+        }
+    }
+
     if (seed == 0)
     {
         seed = static_cast<uint32_t>(std::random_device{}());
@@ -81,7 +95,6 @@ int main(int argc, char** argv)
 
     try
     {
-        // Передаём порт, сид и настройку тумана в сервер
         mcg::server::Server server(port, seed, fog_enabled);
         server.run();
     }

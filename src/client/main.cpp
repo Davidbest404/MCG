@@ -1,6 +1,7 @@
 #include "client/network/connection.h"
 #include "client/ui/console_ui.h"
 #include "shared/util/logging.h"
+#include <atomic>
 #include <chrono>
 #include <iostream>
 #include <mutex>
@@ -49,15 +50,14 @@ int main(int argc, char** argv)
         mcg::client::ConsoleUI ui;
         mcg::client::Connection conn(host, port);
 
-        // Общие данные для потоков
         std::mutex data_mutex;
         std::string current_map = "";
         std::vector<std::string> chat_history;
         std::string input_buffer = "";
         bool game_mode = true;
-        bool running = true;
+        std::atomic<bool> running{true};
+        std::atomic<bool> dirty{true};
 
-        // Коллбэк от сетевого потока (только обновляет данные, ничего не рисует!)
         conn.set_message_callback(
             [&](mcg::protocol::MessageType type, nlohmann::json payload)
             {
@@ -68,6 +68,7 @@ int main(int argc, char** argv)
                     std::string text = payload.value("text", "");
                     std::string prefix = (from == "System") ? "[cE]" : "[cA]";
                     chat_history.push_back(prefix + "[" + from + "]: [c7]" + text);
+                    dirty = true;
                 }
                 else if (type == mcg::protocol::MessageType::WorldSnapshot)
                 {
@@ -75,6 +76,7 @@ int main(int argc, char** argv)
                     current_map.clear();
                     for (const auto& row : grid)
                         current_map += row + "\n";
+                    dirty = true;
                 }
             });
 
@@ -82,11 +84,10 @@ int main(int argc, char** argv)
         conn.send(mcg::protocol::MessageType::Ping, {{"msg", "hello"}});
         conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/map"}});
 
-        // ГЛАВНЫЙ ИГРОВОЙ ЦИКЛ (Game Loop)
         while (running)
         {
-            // 1. Обработка ввода
             int key = ui.read_key_non_blocking();
+
             if (key > 0)
             {
                 if (key == 3)
@@ -95,10 +96,18 @@ int main(int argc, char** argv)
                     break;
                 } // Ctrl+C
 
-                std::lock_guard<std::mutex> lock(data_mutex);
+                // Логируем нажатие для отладки (увидишь в файле лога)
+                MCG_DEBUG("Key pressed: {} ({})", key, static_cast<char>(key));
+
                 if (game_mode)
                 {
-                    if (key == 'w' || key == 'W')
+                    // РЕЖИМ ИГРЫ
+                    if (key == 'T' || key == 't')
+                    {
+                        game_mode = false;
+                        input_buffer.clear();
+                    }
+                    else if (key == 'w' || key == 'W')
                         conn.send(mcg::protocol::MessageType::ChatMessage,
                                   {{"text", "/move north"}});
                     else if (key == 's' || key == 'S')
@@ -112,47 +121,51 @@ int main(int argc, char** argv)
                                   {{"text", "/move east"}});
                     else if (key == ' ')
                         conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move up"}});
-                    else if (key == 'T' || key == 't' || key == 13) // 13 = Enter
-                    {
-                        game_mode = false;
-                        input_buffer.clear();
-                    }
+                    // Shift в Windows _getch может не ловиться, используем 'c' для спуска
+                    else if (key == 'c' || key == 'C')
+                        conn.send(mcg::protocol::MessageType::ChatMessage,
+                                  {{"text", "/move down"}});
+
+                    dirty = true;
                 }
                 else
                 {
-                    if (key == 13) // Enter (отправка)
-                    {
+                    // РЕЖИМ ЧАТА
+                    if (key == 13 || key == '\n')
+                    { // Enter
                         if (!input_buffer.empty())
                         {
                             conn.send(mcg::protocol::MessageType::ChatMessage,
                                       {{"text", input_buffer}});
                             input_buffer.clear();
                         }
-                        game_mode = true;
+                        game_mode = true; // Возвращаемся в игру
                     }
-                    else if (key == 27) // Esc (отмена)
-                    {
+                    else if (key == 27)
+                    { // Esc
                         input_buffer.clear();
                         game_mode = true;
                     }
-                    else if (key == 8 || key == 127) // Backspace
-                    {
+                    else if (key == 8 || key == 127)
+                    { // Backspace
                         if (!input_buffer.empty()) input_buffer.pop_back();
                     }
-                    else if (key >= 32 && key <= 126) // Печатные символы
+                    else if (key >= 32 && key <= 126)
                     {
                         input_buffer.push_back(static_cast<char>(key));
                     }
+
+                    dirty = true;
                 }
             }
 
-            // 2. Отрисовка экрана
+            if (dirty)
             {
                 std::lock_guard<std::mutex> lock(data_mutex);
                 ui.draw(current_map, chat_history, input_buffer, game_mode);
+                dirty = false;
             }
 
-            // 3. Ограничение FPS (~60 кадров в секунду)
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
