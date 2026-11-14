@@ -1,32 +1,26 @@
 #pragma once
-
-#include <iostream>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace mcg::client
 {
-
 class ConsoleUI
 {
 public:
     ConsoleUI();
     ~ConsoleUI();
 
-    // Печатает сообщение из другого потока, не ломая текущий ввод
-    void print_message(const std::string& text);
+    // Отрисовывает весь экран разом (вызывается только из главного потока)
+    void draw(const std::string& map_grid, const std::vector<std::string>& chat_history,
+              const std::string& input, bool game_mode);
 
-    // Читает строку посимвольно, возвращает её по нажатию Enter
-    std::string read_line(const std::string& prompt = "> ");
+    // Читает нажатие клавиши (не блокирующее)
+    int read_key_non_blocking();
 
 private:
-    std::mutex io_mutex_;
-    std::string current_input_;
-    std::string prompt_;
-
 #ifndef _WIN32
     struct termios* old_termios_ = nullptr;
 #endif
 };
-
 } // namespace mcg::client

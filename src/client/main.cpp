@@ -3,6 +3,7 @@
 #include "shared/util/logging.h"
 #include <chrono>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -18,7 +19,6 @@ int main(int argc, char** argv)
 #endif
 
     mcg::log::init("mcg_client", "logs", spdlog::level::info);
-    MCG_INFO("MCG client starting (Phase 4 — commands)");
 
     std::string host = "127.0.0.1";
     uint16_t port = 0;
@@ -49,35 +49,111 @@ int main(int argc, char** argv)
         mcg::client::ConsoleUI ui;
         mcg::client::Connection conn(host, port);
 
-        // Печатаем сообщения через ConsoleUI
+        // Общие данные для потоков
+        std::mutex data_mutex;
+        std::string current_map = "";
+        std::vector<std::string> chat_history;
+        std::string input_buffer = "";
+        bool game_mode = true;
+        bool running = true;
+
+        // Коллбэк от сетевого потока (только обновляет данные, ничего не рисует!)
         conn.set_message_callback(
-            [&ui](mcg::protocol::MessageType type, nlohmann::json payload)
+            [&](mcg::protocol::MessageType type, nlohmann::json payload)
             {
-                if (type == mcg::protocol::MessageType::Pong)
-                {
-                    ui.print_message("[System]: HP=" + std::to_string(payload.value("hp", 0)));
-                }
-                else if (type == mcg::protocol::MessageType::ChatMessage)
+                std::lock_guard<std::mutex> lock(data_mutex);
+                if (type == mcg::protocol::MessageType::ChatMessage)
                 {
                     std::string from = payload.value("from", "?");
                     std::string text = payload.value("text", "");
-                    ui.print_message("[" + from + "]: " + text);
+                    std::string prefix = (from == "System") ? "[cE]" : "[cA]";
+                    chat_history.push_back(prefix + "[" + from + "]: [c7]" + text);
+                }
+                else if (type == mcg::protocol::MessageType::WorldSnapshot)
+                {
+                    auto grid = payload["grid"].get<std::vector<std::string>>();
+                    current_map.clear();
+                    for (const auto& row : grid)
+                        current_map += row + "\n";
                 }
             });
 
         conn.connect();
         conn.send(mcg::protocol::MessageType::Ping, {{"msg", "hello"}});
+        conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/map"}});
 
-        // Главный цикл ввода
-        while (true)
+        // ГЛАВНЫЙ ИГРОВОЙ ЦИКЛ (Game Loop)
+        while (running)
         {
-            std::string line = ui.read_line("> ");
+            // 1. Обработка ввода
+            int key = ui.read_key_non_blocking();
+            if (key > 0)
+            {
+                if (key == 3)
+                {
+                    running = false;
+                    break;
+                } // Ctrl+C
 
-            if (line == "exit") break;
-            if (line.empty()) continue;
+                std::lock_guard<std::mutex> lock(data_mutex);
+                if (game_mode)
+                {
+                    if (key == 'w' || key == 'W')
+                        conn.send(mcg::protocol::MessageType::ChatMessage,
+                                  {{"text", "/move north"}});
+                    else if (key == 's' || key == 'S')
+                        conn.send(mcg::protocol::MessageType::ChatMessage,
+                                  {{"text", "/move south"}});
+                    else if (key == 'a' || key == 'A')
+                        conn.send(mcg::protocol::MessageType::ChatMessage,
+                                  {{"text", "/move west"}});
+                    else if (key == 'd' || key == 'D')
+                        conn.send(mcg::protocol::MessageType::ChatMessage,
+                                  {{"text", "/move east"}});
+                    else if (key == ' ')
+                        conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move up"}});
+                    else if (key == 'T' || key == 't' || key == 13) // 13 = Enter
+                    {
+                        game_mode = false;
+                        input_buffer.clear();
+                    }
+                }
+                else
+                {
+                    if (key == 13) // Enter (отправка)
+                    {
+                        if (!input_buffer.empty())
+                        {
+                            conn.send(mcg::protocol::MessageType::ChatMessage,
+                                      {{"text", input_buffer}});
+                            input_buffer.clear();
+                        }
+                        game_mode = true;
+                    }
+                    else if (key == 27) // Esc (отмена)
+                    {
+                        input_buffer.clear();
+                        game_mode = true;
+                    }
+                    else if (key == 8 || key == 127) // Backspace
+                    {
+                        if (!input_buffer.empty()) input_buffer.pop_back();
+                    }
+                    else if (key >= 32 && key <= 126) // Печатные символы
+                    {
+                        input_buffer.push_back(static_cast<char>(key));
+                    }
+                }
+            }
 
-            nlohmann::json msg = {{"text", line}};
-            conn.send(mcg::protocol::MessageType::ChatMessage, msg);
+            // 2. Отрисовка экрана
+            {
+                std::lock_guard<std::mutex> lock(data_mutex);
+                ui.draw(current_map, chat_history, input_buffer, game_mode);
+            }
+
+            // 3. Ограничение FPS (~60 кадров в секунду)
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
         conn.disconnect();

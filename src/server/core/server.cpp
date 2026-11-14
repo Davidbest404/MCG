@@ -8,7 +8,11 @@
 namespace mcg::server
 {
 
-Server::Server(uint16_t port) : port_(port) {}
+// ИЗМЕНЕНО: инициализируем мир с нужными параметрами
+Server::Server(uint16_t port, uint32_t seed, bool fog_enabled)
+    : port_(port), world_(seed, fog_enabled) // Мир генерируется прямо здесь
+{
+}
 
 Server::~Server()
 {
@@ -19,8 +23,20 @@ void Server::run()
 {
     running_ = true;
 
-    lua_ = std::make_unique<LuaEngine>();
+    lua_ = std::make_unique<LuaEngine>(world_);
+
     lua_->set_broadcast_callback([this](const std::string& text) { broadcast(text); });
+
+    lua_->set_map_update_callback(
+        [this](uint64_t player_id, const nlohmann::json& payload)
+        {
+            auto it = sessions_.find(player_id);
+            if (it != sessions_.end())
+            {
+                network_->send(it->second, mcg::protocol::MessageType::WorldSnapshot, payload);
+            }
+        });
+
     lua_->load_commands("lua/actions/commands");
 
     try
@@ -97,23 +113,17 @@ void Server::handle_ping(std::shared_ptr<Session> session, const nlohmann::json&
 void Server::handle_client_message(std::shared_ptr<Session> session, const nlohmann::json& payload)
 {
     uint64_t player_id = session->id();
-    if (players_.find(player_id) == players_.end())
-    {
-        MCG_WARN("Message from unknown player {}", player_id);
-        return;
-    }
+    if (players_.find(player_id) == players_.end()) return;
 
     std::string text = payload.value("text", "");
     if (text.empty()) return;
 
-    // Если начинается с / — это команда
     if (text[0] == '/')
     {
         handle_command(session, text);
     }
     else
     {
-        // Обычный чат
         std::string name = players_[player_id]->attributes().get("name").get<std::string>();
         nlohmann::json msg = {{"text", text}, {"from", name}, {"scope", "global"}};
         for (auto& [id, s] : sessions_)
@@ -125,15 +135,13 @@ void Server::handle_client_message(std::shared_ptr<Session> session, const nlohm
 
 void Server::handle_command(std::shared_ptr<Session> session, const std::string& text)
 {
-    // Парсим "/cmd arg1 arg2"
-    std::string cmd_line = text.substr(1); // убираем '/'
+    std::string cmd_line = text.substr(1);
     std::istringstream iss(cmd_line);
     std::string cmd_name;
     iss >> cmd_name;
 
     if (cmd_name.empty()) return;
 
-    // Специальная обработка /help (она встроенная, знает про все команды)
     if (cmd_name == "help")
     {
         std::string result = "Available commands:\n";
@@ -149,23 +157,14 @@ void Server::handle_command(std::shared_ptr<Session> session, const std::string&
         return;
     }
 
-    // Ищем команду в загруженных Lua-командах
     LuaCommand* cmd = lua_->find_command(cmd_name);
-    if (!cmd)
-    {
-        nlohmann::json msg = {
-            {"text", "Unknown command: /" + cmd_name}, {"from", "System"}, {"scope", "direct"}};
-        network_->send(session, mcg::protocol::MessageType::ChatMessage, msg);
-        return;
-    }
+    if (!cmd) return;
 
-    // Собираем аргументы
     std::vector<std::string> args;
     std::string arg;
     while (iss >> arg)
         args.push_back(arg);
 
-    // Передаём управление в Lua
     auto& player = players_[session->id()];
     if (cmd->on_command.valid())
     {
@@ -188,19 +187,10 @@ void Server::logic_loop()
         while (network_->pop_message(msg))
         {
             auto [session, type, payload] = msg;
-
             if (type == mcg::protocol::MessageType::Ping)
-            {
                 handle_ping(session, payload);
-            }
             else if (type == mcg::protocol::MessageType::ChatMessage)
-            {
                 handle_client_message(session, payload);
-            }
-            else if (type == mcg::protocol::MessageType::Command)
-            {
-                handle_client_message(session, payload);
-            }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }

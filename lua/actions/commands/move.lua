@@ -1,34 +1,35 @@
 return {
     name = "move",
-    description = "Move player in a direction",
-    args = "<north|south|east|west>",
+    description = "Move player (north/south/east/west/up/down)",
+    args = "<direction>",
     category = "movement",
     admin_only = false,
     on_command = function(player, args)
-        if #args < 1 then
-            api.broadcast("Usage: /move <north|south|east|west>")
-            return
-        end
-        
+        if #args < 1 then return end
         local dir = args[1]
+        
         local x = api.get_attr(player, "pos_x")
         local y = api.get_attr(player, "pos_y")
         local z = api.get_attr(player, "pos_z")
+        local dx, dy, dz = 0, 0, 0
         
-        if dir == "north" then y = y - 1
-        elseif dir == "south" then y = y + 1
-        elseif dir == "east" then x = x + 1
-        elseif dir == "west" then x = x - 1
+        if dir == "north" then dy = -1
+        elseif dir == "south" then dy = 1
+        elseif dir == "east" then dx = 1
+        elseif dir == "west" then dx = -1
+        elseif dir == "up" then dz = 1
+        elseif dir == "down" then dz = -1
+        else return end
+        
+        local nx, ny, nz = x + dx, y + dy, z + dz
+        
+        if api.is_walkable(nx, ny, nz) then
+            api.set_attr(player, "pos_x", nx)
+            api.set_attr(player, "pos_y", ny)
+            api.set_attr(player, "pos_z", nz)
+            api.update_fov(player)
         else
-            api.broadcast("Unknown direction: " .. dir)
-            return
+            api.broadcast("Blocked!")
         end
-        
-        api.set_attr(player, "pos_x", x)
-        api.set_attr(player, "pos_y", y)
-        api.set_attr(player, "pos_z", z)
-        
-        local name = api.get_attr(player, "name")
-        api.broadcast(name .. " moved " .. dir .. " to (" .. x .. ", " .. y .. ", " .. z .. ")")
     end
 }

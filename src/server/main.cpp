@@ -1,6 +1,7 @@
 #include "server/core/server.h"
 #include "shared/util/logging.h"
 #include <iostream>
+#include <random>
 #include <string>
 
 #ifdef _WIN32
@@ -15,33 +16,33 @@ int main(int argc, char** argv)
 #endif
 
     mcg::log::init("mcg_server", "logs", spdlog::level::info);
-    MCG_INFO("MCG server starting (Phase 2 — network)");
+    MCG_INFO("MCG server starting (Phase 6 — UI & Procedural World)");
 
     uint16_t port = 0;
+    uint32_t seed = 0; // 0 означает "сгенерировать случайный"
+    bool fog_enabled = true;
     bool port_provided = false;
 
-    // Проверяем аргументы командной строки
+    // Парсим аргументы командной строки
     for (int i = 1; i < argc; ++i)
     {
         std::string arg = argv[i];
         if ((arg == "--port" || arg == "-p") && i + 1 < argc)
         {
-            try
-            {
-                int val = std::stoi(argv[++i]);
-                if (val < 0 || val > 65535) throw std::out_of_range("port out of range");
-                port = static_cast<uint16_t>(val);
-                port_provided = true;
-            }
-            catch (...)
-            {
-                MCG_ERROR("Invalid port argument");
-                return 1;
-            }
+            port = static_cast<uint16_t>(std::stoi(argv[++i]));
+            port_provided = true;
+        }
+        else if (arg == "--seed" && i + 1 < argc)
+        {
+            seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+        }
+        else if (arg == "--no-fog")
+        {
+            fog_enabled = false;
         }
     }
 
-    // Интерактивный ввод, если порт не передан
+    // Если порт не передан, спрашиваем интерактивно
     if (!port_provided)
     {
         std::cout << "Enter port to listen on (default 7777, 0 for any free port): ";
@@ -67,9 +68,21 @@ int main(int argc, char** argv)
         }
     }
 
+    // Если сид не указан, генерируем случайный
+    if (seed == 0)
+    {
+        seed = static_cast<uint32_t>(std::random_device{}());
+        MCG_INFO("No seed provided, generated random seed: {}", seed);
+    }
+    else
+    {
+        MCG_INFO("Using provided seed: {}", seed);
+    }
+
     try
     {
-        mcg::server::Server server(port);
+        // Передаём порт, сид и настройку тумана в сервер
+        mcg::server::Server server(port, seed, fog_enabled);
         server.run();
     }
     catch (const std::exception& e)

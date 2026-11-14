@@ -1,9 +1,11 @@
 #include "server/lua/lua_engine.h"
 #include "server/player/player.h"
+#include "server/world/fov.h"
 #include "shared/util/logging.h"
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <vector>
 
 namespace mcg::server
 {
@@ -18,7 +20,7 @@ static sol::object json_to_sol(sol::state_view lua, const nlohmann::json& j)
     return sol::nil;
 }
 
-LuaEngine::LuaEngine()
+LuaEngine::LuaEngine(World& world) : world_(world)
 {
     lua_.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::os);
 
@@ -52,6 +54,86 @@ LuaEngine::LuaEngine()
                      {
                          if (broadcast_cb_) broadcast_cb_(text);
                      });
+
+        // API: проверить, можно ли пройти (теперь с Z)
+    api.set_function("is_walkable",
+                     [this](int x, int y, int z) { return world_.is_walkable(x, y, z); });
+
+    // API: обновить FOV и отправить карту клиенту
+    api.set_function("update_fov",
+                     [this](Player& p)
+                     {
+                         int px = p.attributes().get("pos_x").get<int>();
+                         int py = p.attributes().get("pos_y").get<int>();
+                         int pz = p.attributes().get("pos_z").get<int>();
+                         int radius = 10; // Радиус обзора
+
+                         nlohmann::json grid = nlohmann::json::array();
+
+                         for (int y = py - radius; y <= py + radius; ++y)
+                         {
+                             std::string row;
+                             for (int x = px - radius; x <= px + radius; ++x)
+                             {
+                                 if (x == px && y == py)
+                                 {
+                                     // Игрок в центре — всегда яркий
+                                     row += "[cE]@[/c]";
+                                     continue;
+                                 }
+
+                                 if (!world_.fog_enabled() ||
+                                     fov::has_los(world_, px, py, pz, x, y, pz))
+                                 {
+                                     Tile t = world_.get_tile(x, y, pz);
+                                     char sym = t.symbol;
+
+                                     // Выбираем цвет в зависимости от символа и высоты (z)
+                                     if (sym == '#')
+                                     {
+                                         row += "[c8]#[/c]"; // Стены — темно-серые
+                                     }
+                                     else if (sym == '^')
+                                     {
+                                         row += "[cF]^[/c]"; // Горы — белые
+                                     }
+                                     else if (sym == '~')
+                                     {
+                                         row += "[c1]~[/c]"; // Вода — синяя
+                                     }
+                                     else if (sym == '"')
+                                     {
+                                         row += "[c2]\"[/c]"; // Трава — зеленая
+                                     }
+                                     else
+                                     {
+                                         // Пустая земля. Градиент по Z
+                                         if (pz < 0)
+                                             row += "[c4].[/c]"; // Глубоко — темно-красный
+                                         else if (pz == 0)
+                                             row += "[c7].[/c]"; // Поверхность — светло-серый
+                                         else
+                                             row += "[cC].[/c]"; // Высоко — голубой
+                                     }
+                                 }
+                                 else
+                                 {
+                                     row += " "; // Туман войны (пустота)
+                                 }
+                             }
+                             grid.push_back(row);
+                         }
+
+                         if (map_update_cb_)
+                         {
+                             nlohmann::json payload;
+                             payload["x"] = px;
+                             payload["y"] = py;
+                             payload["z"] = pz;
+                             payload["grid"] = grid;
+                             map_update_cb_(p.id(), payload);
+                         }
+                     });
 }
 
 LuaEngine::~LuaEngine() = default;
@@ -72,12 +154,7 @@ void LuaEngine::run_script(const std::string& path)
 void LuaEngine::load_commands(const std::string& commands_dir)
 {
     namespace fs = std::filesystem;
-
-    if (!fs::exists(commands_dir))
-    {
-        MCG_WARN("Commands directory does not exist: {}", commands_dir);
-        return;
-    }
+    if (!fs::exists(commands_dir)) return;
 
     for (const auto& entry : fs::directory_iterator(commands_dir))
     {
@@ -86,17 +163,11 @@ void LuaEngine::load_commands(const std::string& commands_dir)
         try
         {
             auto result = lua_.script_file(entry.path().string());
-
-            if (!result.valid() || result.get_type() != sol::type::table)
-            {
-                MCG_WARN("Script did not return a table: {}", entry.path().string());
-                continue;
-            }
+            if (!result.valid() || result.get_type() != sol::type::table) continue;
 
             sol::table t = result;
             LuaCommand cmd;
 
-            // Безопасное чтение полей
             auto get_str = [](sol::table tbl, const char* key, const std::string& def = "")
             {
                 sol::object o = tbl[key];
@@ -121,13 +192,8 @@ void LuaEngine::load_commands(const std::string& commands_dir)
                 cmd.on_command = on_cmd.as<sol::protected_function>();
             }
 
-            if (cmd.name.empty())
-            {
-                MCG_WARN("Command has no name: {}", entry.path().string());
-                continue;
-            }
+            if (cmd.name.empty()) continue;
 
-            // ИСПРАВЛЕНО: сохраняем имя до перемещения
             const std::string cmd_name = cmd.name;
             commands_[cmd_name] = std::move(cmd);
             MCG_INFO("Registered command: /{}", cmd_name);
