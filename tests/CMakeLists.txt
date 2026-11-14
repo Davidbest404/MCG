@@ -1,5 +1,9 @@
 add_executable(mcg_tests
     test_main.cpp
+    test_math.cpp
+    test_attributes.cpp
+    test_color.cpp
+    test_protocol.cpp
 )
 
 target_link_libraries(mcg_tests PRIVATE

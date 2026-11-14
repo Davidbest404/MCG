@@ -1,4 +1,7 @@
 add_library(mcg_shared STATIC
+    attributes/attribute_map.cpp
+    color/tag_parser.cpp
+    protocol/frame.cpp
     util/logging.cpp
 )
 
