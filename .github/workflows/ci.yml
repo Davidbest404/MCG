@@ -34,25 +34,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup CMake + Ninja
-        uses: lukka/get-cmake@latest
-
-      # --- Ubuntu: ставим компиляторы из PPA, чтобы гарантированно были нужные версии ---
+      # --- Ubuntu: обновляем только основные репозитории, чтобы избежать падения apt-get ---
       - name: Install compilers (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo apt-get update
+          sudo apt-get update -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          sudo apt-get update
+          sudo apt-get update -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
           sudo apt-get install -y ninja-build gcc-13 g++-13 clang-16
 
-      # --- macOS: задаём SDKROOT ДО конфигурации CMake ---
-      - name: Setup SDKROOT (macOS)
+      # --- macOS: принудительно ставим свежий CMake и задаём SDKROOT ---
+      - name: Setup CMake (macOS)
         if: matrix.os == 'macos-latest'
         run: |
+          brew install cmake
           echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
 
+      - name: Setup CMake (Windows/Linux)
+        if: matrix.os != 'macos-latest'
+        uses: lukka/get-cmake@latest
+
+      # --- Конфигурация ---
       - name: Configure (Unix)
         if: matrix.os != 'windows-latest'
         run: |
@@ -60,12 +63,13 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=${{ matrix.cc }} \
             -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
-            -DCMAKE_OSX_SYSROOT=macosx
+            -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
 
       - name: Configure (Windows)
         if: matrix.os == 'windows-latest'
-        run: cmake -S . -B build
+        run: cmake -S . -B build -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
 
+      # --- Сборка и тесты ---
       - name: Build
         run: cmake --build build --config Release --parallel
 
