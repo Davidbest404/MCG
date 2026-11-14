@@ -45,6 +45,62 @@ FetchContent_Declare(json
 
 FetchContent_MakeAvailable(fmt spdlog json)
 
+# --- sol2 & Lua ---
+FetchContent_Declare(sol2
+    GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+    GIT_TAG        v3.3.0
+    GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(sol2)
+
+FetchContent_Declare(lua
+    GIT_REPOSITORY https://github.com/lua/lua.git
+    GIT_TAG        v5.4.6
+    GIT_SHALLOW    TRUE)
+
+FetchContent_GetProperties(lua)
+if(NOT lua_POPULATED)
+    FetchContent_Populate(lua)
+    file(GLOB LUA_SOURCES ${lua_SOURCE_DIR}/*.c)
+    
+    # Исключаем интерпретатор, компилятор и onelua.c
+    list(REMOVE_ITEM LUA_SOURCES 
+        ${lua_SOURCE_DIR}/lua.c 
+        ${lua_SOURCE_DIR}/luac.c
+        ${lua_SOURCE_DIR}/onelua.c)
+        
+    add_library(lua_lib STATIC ${LUA_SOURCES})
+    target_include_directories(lua_lib PUBLIC ${lua_SOURCE_DIR})
+    
+    if(WIN32)
+        # На Windows ничего дополнительно не нужно
+    else()
+        target_compile_definitions(lua_lib PRIVATE LUA_USE_POSIX LUA_USE_DLOPEN)
+        target_link_libraries(lua_lib PUBLIC m ${CMAKE_DL_LIBS})
+    endif()
+endif()
+
+# --- Asio (Standalone) ---
+FetchContent_Declare(asio
+    GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
+    GIT_TAG        asio-1-30-2
+    GIT_SHALLOW    TRUE)
+
+FetchContent_GetProperties(asio)
+if(NOT asio_POPULATED)
+    FetchContent_Populate(asio)
+endif()
+
+add_library(asio_standalone INTERFACE)
+target_include_directories(asio_standalone INTERFACE ${asio_SOURCE_DIR}/asio/include)
+target_compile_definitions(asio_standalone INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+if(WIN32)
+    target_link_libraries(asio_standalone INTERFACE ws2_32 wsock32)
+endif()
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(asio_standalone INTERFACE Threads::Threads)
+endif()
+
 if(MCG_BUILD_TESTS)
     FetchContent_Declare(Catch2
         URL https://github.com/catchorg/Catch2/archive/refs/tags/v3.5.2.tar.gz

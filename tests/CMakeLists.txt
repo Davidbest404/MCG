@@ -4,6 +4,7 @@ add_executable(mcg_tests
     test_attributes.cpp
     test_color.cpp
     test_protocol.cpp
+    test_lockfree_queue.cpp
 )
 
 target_link_libraries(mcg_tests PRIVATE
