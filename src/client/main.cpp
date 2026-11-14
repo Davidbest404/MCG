@@ -1,4 +1,5 @@
 #include "client/network/connection.h"
+#include "client/ui/console_ui.h"
 #include "shared/util/logging.h"
 #include <chrono>
 #include <iostream>
@@ -45,37 +46,41 @@ int main(int argc, char** argv)
 
     try
     {
+        mcg::client::ConsoleUI ui;
         mcg::client::Connection conn(host, port);
 
+        // Печатаем сообщения через ConsoleUI
         conn.set_message_callback(
-            [](mcg::protocol::MessageType type, nlohmann::json payload)
+            [&ui](mcg::protocol::MessageType type, nlohmann::json payload)
             {
                 if (type == mcg::protocol::MessageType::Pong)
                 {
-                    MCG_INFO("Received Pong: HP={}", payload.value("hp", 0));
+                    ui.print_message("[System]: HP=" + std::to_string(payload.value("hp", 0)));
                 }
                 else if (type == mcg::protocol::MessageType::ChatMessage)
                 {
                     std::string from = payload.value("from", "?");
                     std::string text = payload.value("text", "");
-                    std::cout << "[" << from << "]: " << text << std::endl;
+                    ui.print_message("[" + from + "]: " + text);
                 }
             });
 
         conn.connect();
         conn.send(mcg::protocol::MessageType::Ping, {{"msg", "hello"}});
 
-        std::cout << "Connected! Type messages or /commands. Ctrl+C to exit." << std::endl;
-
-        // Читаем ввод пользователя
-        std::string line;
-        while (std::getline(std::cin, line))
+        // Главный цикл ввода
+        while (true)
         {
+            std::string line = ui.read_line("> ");
+
+            if (line == "exit") break;
             if (line.empty()) continue;
 
             nlohmann::json msg = {{"text", line}};
             conn.send(mcg::protocol::MessageType::ChatMessage, msg);
         }
+
+        conn.disconnect();
     }
     catch (const std::exception& e)
     {

@@ -87,7 +87,6 @@ void LuaEngine::load_commands(const std::string& commands_dir)
         {
             auto result = lua_.script_file(entry.path().string());
 
-            // ИСПРАВЛЕНО: убрали "!" перед result.get_type()
             if (!result.valid() || result.get_type() != sol::type::table)
             {
                 MCG_WARN("Script did not return a table: {}", entry.path().string());
@@ -97,15 +96,30 @@ void LuaEngine::load_commands(const std::string& commands_dir)
             sol::table t = result;
             LuaCommand cmd;
 
-            // ИСПРАВЛЕНО: оборачиваем строковые литералы в std::string,
-            // чтобы компилятор не путался с перегрузками get_or
-            cmd.name = t["name"].get_or(std::string(""));
-            cmd.description = t["description"].get_or(std::string(""));
-            cmd.args = t["args"].get_or(std::string(""));
-            cmd.category = t["category"].get_or(std::string(""));
-            cmd.admin_only = t["admin_only"].get_or(false);
-            cmd.requires_active_player = t["requires_active_player"].get_or(true);
-            cmd.on_command = t["on_command"];
+            // Безопасное чтение полей
+            auto get_str = [](sol::table tbl, const char* key, const std::string& def = "")
+            {
+                sol::object o = tbl[key];
+                return (o.valid() && o.is<std::string>()) ? o.as<std::string>() : def;
+            };
+            auto get_bool = [](sol::table tbl, const char* key, bool def = false)
+            {
+                sol::object o = tbl[key];
+                return (o.valid() && o.is<bool>()) ? o.as<bool>() : def;
+            };
+
+            cmd.name = get_str(t, "name");
+            cmd.description = get_str(t, "description");
+            cmd.args = get_str(t, "args");
+            cmd.category = get_str(t, "category");
+            cmd.admin_only = get_bool(t, "admin_only", false);
+            cmd.requires_active_player = get_bool(t, "requires_active_player", true);
+
+            sol::object on_cmd = t["on_command"];
+            if (on_cmd.valid() && on_cmd.is<sol::protected_function>())
+            {
+                cmd.on_command = on_cmd.as<sol::protected_function>();
+            }
 
             if (cmd.name.empty())
             {
@@ -113,8 +127,10 @@ void LuaEngine::load_commands(const std::string& commands_dir)
                 continue;
             }
 
-            commands_[cmd.name] = std::move(cmd);
-            MCG_INFO("Registered command: /{}", commands_[cmd.name].name);
+            // ИСПРАВЛЕНО: сохраняем имя до перемещения
+            const std::string cmd_name = cmd.name;
+            commands_[cmd_name] = std::move(cmd);
+            MCG_INFO("Registered command: /{}", cmd_name);
         }
         catch (const sol::error& e)
         {
