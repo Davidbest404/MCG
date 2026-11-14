@@ -78,3 +78,31 @@ return {
     admin_only = false,
     on_command = function(ctx, args) -- ... end
 }
+
+### 12.5. Планеты (две стратегии)
+
+Контент-мейкер выбирает:
+
+**A. Единая сущность.** Планета — Entity с `layer = celestial`, большим
+`size`, атрибутом `resources`. При добыче Lua уменьшает `size` и
+`resources`. Дёшево для сервера, работает в первой версии.
+
+**B. Сцена.** Планета — отдельный регион (Scene) с чанками. Игрок
+«высаживается»: `api.enter_scene(entity, planet_id, landing_pos)`.
+Дороже, требует механизма сцен (Phase 13).
+
+### 12.6. Карточки чата
+
+Сообщение с `form = "card"` содержит `card = { art, name, text }`.
+ASCII-рамка вокруг карточки — **клиентская настройка** (в
+`assets/configs/client.json` у каждого игрока своя). Сервер не
+знает о рамке, только передаёт содержимое.
+
+### 12.7. Параметры мира из конфига и админ-команд
+
+- `max_render_distance` — в `server.json`, меняется админом:
+  `/world render_distance <N>`.
+- `coordinate_mode` — в `server.json`, требует рестарта мира.
+- `defaults.requires_active_player` — в `server.json`, дефолт `true`,
+  каждый Lua-скрипт может переопределить.
+- `pow_difficulty` — в `server.json`, дефолт `4`.
