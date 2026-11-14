@@ -1,0 +1,36 @@
+# Build
+/build/
+/out/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CMakeUserPresets.json
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+*.xcodeproj/
+*.xcworkspace/
+
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.pdb
+
+# Runtime
+logs/
+saves/
+*.log
+
+# Misc
+.DS_Store
+Thumbs.db

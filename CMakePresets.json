@@ -1,0 +1,35 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-vs",
+      "displayName": "Windows (Visual Studio 2022)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/vs",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "unix-ninja",
+      "displayName": "Unix (Ninja Multi-Config)",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/ninja",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-debug",   "configurePreset": "windows-vs", "configuration": "Debug" },
+    { "name": "windows-release", "configurePreset": "windows-vs", "configuration": "Release" },
+    { "name": "unix-debug",      "configurePreset": "unix-ninja", "configuration": "Debug" },
+    { "name": "unix-release",    "configurePreset": "unix-ninja", "configuration": "Release" }
+  ]
+}

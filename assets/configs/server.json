@@ -1,0 +1,23 @@
+{
+  "server": {
+    "name": "MCG Dev Server",
+    "port": 7777,
+    "max_clients": 200,
+    "description": "Development server",
+    "rules": "Be kind."
+  },
+  "world": {
+    "coordinate_mode": "integer",
+    "chunk_size": 32,
+    "borders": {
+      "enabled": true,
+      "min": [-1024, -1024, -128],
+      "max": [ 1024,  1024,  128]
+    },
+    "default_fov_radius": 16
+  },
+  "auth": {
+    "pow_difficulty": 4,
+    "whitelist_enabled": false
+  }
+}
