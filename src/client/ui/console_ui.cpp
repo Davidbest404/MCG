@@ -14,25 +14,24 @@
 
 namespace mcg::client
 {
-
-// Преобразование тегов [cX] в ANSI-коды
 std::string colorize(const std::string& text)
 {
     auto parsed = mcg::color::parse_colored(text);
     std::string out;
-    const char* ansi_colors[] = {"\033[30m", "\033[34m", "\033[32m", "\033[36m",
-                                 "\033[31m", "\033[35m", "\033[33m", "\033[37m",
-                                 "\033[90m", "\033[94m", "\033[92m", "\033[96m",
-                                 "\033[91m", "\033[95m", "\033[93m", "\033[97m"};
+    const char* ansi_fg[] = {"\033[30m", "\033[34m", "\033[32m", "\033[36m", "\033[31m", "\033[35m",
+                             "\033[33m", "\033[37m", "\033[90m", "\033[94m", "\033[92m", "\033[96m",
+                             "\033[91m", "\033[95m", "\033[93m", "\033[97m"};
+    const char* ansi_bg[] = {"\033[40m",  "\033[44m",  "\033[42m",  "\033[46m",
+                             "\033[41m",  "\033[45m",  "\033[43m",  "\033[47m",
+                             "\033[100m", "\033[104m", "\033[102m", "\033[106m",
+                             "\033[101m", "\033[105m", "\033[103m", "\033[107m"};
 
     for (const auto& seg : parsed.segments)
     {
-        if (seg.fg_color != -1)
-            out += ansi_colors[seg.fg_color];
-        else
-            out += "\033[0m";
+        if (seg.fg_color != -1) out += ansi_fg[seg.fg_color];
+        if (seg.bg_color != -1) out += ansi_bg[seg.bg_color];
         out += seg.text;
-        out += "\033[0m";
+        out += "\033[0m"; // Сброс всех цветов после сегмента
     }
     return out;
 }
@@ -53,13 +52,12 @@ ConsoleUI::ConsoleUI()
     tcsetattr(STDIN_FILENO, TCSANOW, &newt);
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
 #endif
-    // Скрываем курсор терминала (чтобы он не мигал при перерисовке)
     std::cout << "\033[?25l\033[2J\033[H";
 }
 
 ConsoleUI::~ConsoleUI()
 {
-    std::cout << "\033[?25h"; // Возвращаем курсор
+    std::cout << "\033[?25h";
 #ifndef _WIN32
     if (old_termios_)
     {
@@ -72,36 +70,35 @@ ConsoleUI::~ConsoleUI()
 void ConsoleUI::draw(const std::string& map_grid, const std::vector<std::string>& chat_history,
                      const std::string& input, bool game_mode)
 {
-    // Встаем в левый верхний угол
-    std::cout << "\033[H";
+    std::string buffer;
+    buffer.reserve(8192);
+    buffer += "\033[H";
 
-    // 1. Рисуем карту
     std::istringstream ss(map_grid);
     std::string line;
     while (std::getline(ss, line))
     {
-        std::cout << "\033[K" << colorize(line) << "\n";
+        buffer += "\033[K" + colorize(line) + "\n";
     }
+    buffer += "\033[K\n";
 
-    std::cout << "\033[K\n"; // Пустая строка между картой и чатом
-
-    // 2. Рисуем чат (последние 10 сообщений)
     size_t start = chat_history.size() > 10 ? chat_history.size() - 10 : 0;
     for (size_t i = start; i < chat_history.size(); ++i)
     {
-        std::cout << "\033[K" << colorize(chat_history[i]) << "\n";
+        buffer += "\033[K" + colorize(chat_history[i]) + "\n";
     }
 
-    // 3. Рисуем строку ввода
     if (game_mode)
     {
-        std::cout << "\033[K\033[32m[WASD: Move, Space: Up, Shift: Down, T: Chat]\033[0m "
-                  << std::flush;
+        buffer += "\033[K\033[32m[WASD: Move, Space: Up, Shift: Down, T: Chat]\033[0m ";
     }
     else
     {
-        std::cout << "\033[K> " << input << std::flush;
+        buffer += "\033[K> " + input;
     }
+    buffer += "\033[J";
+
+    std::cout << buffer << std::flush;
 }
 
 int ConsoleUI::read_key_non_blocking()
@@ -114,5 +111,4 @@ int ConsoleUI::read_key_non_blocking()
 #endif
     return 0;
 }
-
 } // namespace mcg::client

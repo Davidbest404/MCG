@@ -8,9 +8,8 @@
 namespace mcg::server
 {
 
-// ИЗМЕНЕНО: инициализируем мир с нужными параметрами
 Server::Server(uint16_t port, uint32_t seed, bool fog_enabled)
-    : port_(port), world_(seed, fog_enabled) // Мир генерируется прямо здесь
+    : port_(port), world_(seed, fog_enabled)
 {
 }
 
@@ -24,9 +23,7 @@ void Server::run()
     running_ = true;
 
     lua_ = std::make_unique<LuaEngine>(world_);
-
     lua_->set_broadcast_callback([this](const std::string& text) { broadcast(text); });
-
     lua_->set_map_update_callback(
         [this](uint64_t player_id, const nlohmann::json& payload)
         {
@@ -36,7 +33,6 @@ void Server::run()
                 network_->send(it->second, mcg::protocol::MessageType::WorldSnapshot, payload);
             }
         });
-
     lua_->load_commands("lua/actions/commands");
 
     try
@@ -48,7 +44,6 @@ void Server::run()
         if (port_ != 0)
         {
             MCG_WARN("Failed to bind to port {}: {}", port_, mcg::util::error_message(e.code()));
-            MCG_WARN("Trying any free port instead...");
             network_ = std::make_unique<NetworkThread>(0);
         }
         else
@@ -71,7 +66,6 @@ void Server::run()
 
     MCG_INFO("Server is listening on port {}", network_->port());
     network_->start();
-
     logic_thread_ = std::thread([this]() { logic_loop(); });
     logic_thread_.join();
 }
@@ -98,11 +92,13 @@ void Server::handle_ping(std::shared_ptr<Session> session, const nlohmann::json&
 
     if (players_.find(player_id) == players_.end())
     {
+        // Найди handle_ping и замени установку Z:
         auto player = std::make_shared<Player>(player_id);
+        player->attributes().set("pos_z", world_.get_surface_z(0, 0));
+
         players_[player_id] = player;
         sessions_[player_id] = session;
         lua_->on_player_connect(player);
-
         broadcast("Player " + player->attributes().get("name").get<std::string>() + " joined");
     }
 
@@ -117,6 +113,9 @@ void Server::handle_client_message(std::shared_ptr<Session> session, const nlohm
 
     std::string text = payload.value("text", "");
     if (text.empty()) return;
+
+    // ДОБАВЛЕНО: отладочный лог
+    MCG_INFO("Received text from player {}: '{}'", player_id, text);
 
     if (text[0] == '/')
     {
@@ -149,8 +148,7 @@ void Server::handle_command(std::shared_ptr<Session> session, const std::string&
         {
             result += "  /" + name;
             if (!cmd.args.empty()) result += " " + cmd.args;
-            result += " - " + cmd.description;
-            result += "\n";
+            result += " - " + cmd.description + "\n";
         }
         nlohmann::json msg = {{"text", result}, {"from", "System"}, {"scope", "direct"}};
         network_->send(session, mcg::protocol::MessageType::ChatMessage, msg);
@@ -158,7 +156,11 @@ void Server::handle_command(std::shared_ptr<Session> session, const std::string&
     }
 
     LuaCommand* cmd = lua_->find_command(cmd_name);
-    if (!cmd) return;
+    if (!cmd)
+    {
+        MCG_WARN("Command not found: {}", cmd_name); // ДОБАВЛЕНО
+        return;
+    }
 
     std::vector<std::string> args;
     std::string arg;
@@ -168,6 +170,7 @@ void Server::handle_command(std::shared_ptr<Session> session, const std::string&
     auto& player = players_[session->id()];
     if (cmd->on_command.valid())
     {
+        MCG_INFO("Executing Lua command /{}", cmd_name); // ДОБАВЛЕНО
         auto result = cmd->on_command(player.get(), args);
         if (!result.valid())
         {
@@ -181,7 +184,6 @@ void Server::logic_loop()
 {
     MCG_INFO("Logic thread started");
     NetworkThread::IncomingMessage msg;
-
     while (running_)
     {
         while (network_->pop_message(msg))

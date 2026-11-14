@@ -1,4 +1,4 @@
-#include "server/lua/lua_engine.h"
+п»ї#include "server/lua/lua_engine.h"
 #include "server/player/player.h"
 #include "server/world/fov.h"
 #include "shared/util/logging.h"
@@ -55,85 +55,149 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                          if (broadcast_cb_) broadcast_cb_(text);
                      });
 
-        // API: проверить, можно ли пройти (теперь с Z)
+        // API: РїСЂРѕРІРµСЂРёС‚СЊ, РјРѕР¶РЅРѕ Р»Рё РїСЂРѕР№С‚Рё (С‚РµРїРµСЂСЊ СЃ Z)
     api.set_function("is_walkable",
                      [this](int x, int y, int z) { return world_.is_walkable(x, y, z); });
 
-    // API: обновить FOV и отправить карту клиенту
-    api.set_function("update_fov",
-                     [this](Player& p)
-                     {
-                         int px = p.attributes().get("pos_x").get<int>();
-                         int py = p.attributes().get("pos_y").get<int>();
-                         int pz = p.attributes().get("pos_z").get<int>();
-                         int radius = 10; // Радиус обзора
+    // API: РѕР±РЅРѕРІРёС‚СЊ FOV Рё РѕС‚РїСЂР°РІРёС‚СЊ РєР°СЂС‚Сѓ РєР»РёРµРЅС‚Сѓ
+    // Р—Р°РјРµРЅРё С‚РѕР»СЊРєРѕ update_fov:
+    api.set_function(
+        "update_fov",
+        [this](Player& p)
+        {
+            int px = p.attributes().get("pos_x").get<int>();
+            int py = p.attributes().get("pos_y").get<int>();
+            int pz = p.attributes().get("pos_z").get<int>();
+            int radius = 7;
 
-                         nlohmann::json grid = nlohmann::json::array();
+            nlohmann::json grid = nlohmann::json::array();
+            for (int y = py - radius; y <= py + radius; ++y)
+            {
+                std::string row;
+                for (int x = px - radius; x <= px + radius; ++x)
+                {
+                    if (!world_.fog_enabled() || fov::has_los(world_, px, py, pz, x, y, pz))
+                    {
+                        if (x == px && y == py)
+                        {
+                            // --- РР“Р РћРљ ---
+                            // РћРїСЂРµРґРµР»СЏРµРј С†РІРµС‚ Р±Р»РѕРєР° РїРѕРґ РЅРѕРіР°РјРё РёРіСЂРѕРєР°
+                            std::string bg_color = "0"; // РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РїСѓСЃС‚РѕС‚Р°
+                            int gz = pz - 1;
+                            bool has_ov = world_.has_overlay(x, y, gz);
+                            Tile overlay = world_.get_overlay(x, y, gz);
 
-                         for (int y = py - radius; y <= py + radius; ++y)
-                         {
-                             std::string row;
-                             for (int x = px - radius; x <= px + radius; ++x)
-                             {
-                                 if (x == px && y == py)
-                                 {
-                                     // Игрок в центре — всегда яркий
-                                     row += "[cE]@[/c]";
-                                     continue;
-                                 }
+                            if (has_ov && overlay.symbol != ' ')
+                            {
+                                if (overlay.symbol == '~')
+                                    bg_color = "1"; // Р’РѕРґР° - СЃРёРЅРёР№ С„РѕРЅ
+                                else if (overlay.symbol == '"')
+                                    bg_color = "2"; // РўСЂР°РІР° - Р·РµР»РµРЅС‹Р№ С„РѕРЅ
+                                else if (overlay.symbol == '*')
+                                    bg_color = "F"; // РЎРЅРµРі - Р±РµР»С‹Р№ С„РѕРЅ
+                            }
+                            else
+                            {
+                                Tile terrain = world_.get_terrain(x, y, gz);
+                                if (terrain.symbol == '#') bg_color = "7"; // РљР°РјРµРЅСЊ - СЃРµСЂС‹Р№ С„РѕРЅ
+                            }
+                            row += "[cE][bg" + bg_color + "]@[/bg][/c]";
+                            continue;
+                        }
 
-                                 if (!world_.fog_enabled() ||
-                                     fov::has_los(world_, px, py, pz, x, y, pz))
-                                 {
-                                     Tile t = world_.get_tile(x, y, pz);
-                                     char sym = t.symbol;
+                        if (!world_.is_walkable(x, y, pz))
+                        {
+                            // --- РЎРўР•РќРђ РќРђ РЈР РћР’РќР• РР“Р РћРљРђ ---
+                            // Р§РµСЂРЅС‹Р№ РєСЂРµСЃС‚ РЅР° СЃРµСЂРѕРј С„РѕРЅРµ (С†РІРµС‚ РєР°РјРЅСЏ)
+                            row += "[c0][bg7]x[/bg][/c]";
+                            continue;
+                        }
 
-                                     // Выбираем цвет в зависимости от символа и высоты (z)
-                                     if (sym == '#')
-                                     {
-                                         row += "[c8]#[/c]"; // Стены — темно-серые
-                                     }
-                                     else if (sym == '^')
-                                     {
-                                         row += "[cF]^[/c]"; // Горы — белые
-                                     }
-                                     else if (sym == '~')
-                                     {
-                                         row += "[c1]~[/c]"; // Вода — синяя
-                                     }
-                                     else if (sym == '"')
-                                     {
-                                         row += "[c2]\"[/c]"; // Трава — зеленая
-                                     }
-                                     else
-                                     {
-                                         // Пустая земля. Градиент по Z
-                                         if (pz < 0)
-                                             row += "[c4].[/c]"; // Глубоко — темно-красный
-                                         else if (pz == 0)
-                                             row += "[c7].[/c]"; // Поверхность — светло-серый
-                                         else
-                                             row += "[cC].[/c]"; // Высоко — голубой
-                                     }
-                                 }
-                                 else
-                                 {
-                                     row += " "; // Туман войны (пустота)
-                                 }
-                             }
-                             grid.push_back(row);
-                         }
+                        // РС‰РµРј РїРѕР» РІРЅРёР·Сѓ
+                        int top_z = -100;
+                        for (int z = pz - 1; z >= pz - 20; --z)
+                        {
+                            if (!world_.is_walkable(x, y, z))
+                            {
+                                top_z = z;
+                                break;
+                            }
+                        }
 
-                         if (map_update_cb_)
-                         {
-                             nlohmann::json payload;
-                             payload["x"] = px;
-                             payload["y"] = py;
-                             payload["z"] = pz;
-                             payload["grid"] = grid;
-                             map_update_cb_(p.id(), payload);
-                         }
-                     });
+                        if (top_z != -100)
+                        {
+                            int depth = pz - (top_z + 1);
+
+                            bool has_ov = world_.has_overlay(x, y, top_z);
+                            Tile overlay = world_.get_overlay(x, y, top_z);
+
+                            // РћРїСЂРµРґРµР»СЏРµРј С†РІРµС‚ С„РѕРЅР° (С†РІРµС‚ РїРѕР»Р° РЅР° РґРЅРµ)
+                            std::string bg_color = "7"; // РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РєР°РјРµРЅСЊ
+                            char floor_sym = '#';
+                            if (has_ov && overlay.symbol != ' ')
+                            {
+                                floor_sym = overlay.symbol;
+                                if (floor_sym == '~')
+                                    bg_color = "1"; // Р’РѕРґР°
+                                else if (floor_sym == '"')
+                                    bg_color = "2"; // РўСЂР°РІР°
+                                else if (floor_sym == '*')
+                                    bg_color = "F"; // РЎРЅРµРі
+                            }
+
+                            if (depth == 0)
+                            {
+                                // --- Р РћР’РќР«Р™ РџРћР› ---
+                                row += "[c" + bg_color + "]";
+                                if (floor_sym == '#')
+                                    row += "в–€";
+                                else
+                                    row += std::string(1, floor_sym);
+                                row += "[/c]";
+                            }
+                            else
+                            {
+                                // --- Р“Р›РЈР‘РРќРђ ---
+                                // РСЃРїРѕР»СЊР·СѓРµРј РіСЂР°РґРёРµРЅС‚РЅС‹Рµ СЃРёРјРІРѕР»С‹, С†РІРµС‚ С„РѕРЅР° = С†РІРµС‚ РїРѕР»Р°
+                                std::string fg = "0"; // Р§РµСЂРЅС‹Р№
+                                if (depth > 5)
+                                    fg = "0"; // РћС‡РµРЅСЊ РіР»СѓР±РѕРєРѕ - С‡РµСЂРЅС‹Р№
+                                else if (depth > 2)
+                                    fg = "8"; // РЎСЂРµРґРЅСЏСЏ РіР»СѓР±РёРЅР° - С‚РµРјРЅРѕ-СЃРµСЂС‹Р№
+
+                                std::string sym = "в–‘";
+                                if (depth == 1)
+                                    sym = "в–“";
+                                else if (depth == 2)
+                                    sym = "в–’";
+
+                                row += "[c" + fg + "][bg" + bg_color + "]" + sym + "[/bg][/c]";
+                            }
+                        }
+                        else
+                        {
+                            // --- Р‘Р•Р—Р”РќРђ ---
+                            row += "[c0][bg0]в–‘[/bg][/c]";
+                        }
+                    }
+                    else
+                    {
+                        row += " "; // РўСѓРјР°РЅ РІРѕР№РЅС‹
+                    }
+                }
+                grid.push_back(row);
+            }
+
+            if (map_update_cb_)
+            {
+                nlohmann::json payload;
+                payload["x"] = px;
+                payload["y"] = py;
+                payload["z"] = pz;
+                payload["grid"] = grid;
+                map_update_cb_(p.id(), payload);
+            }
+        });
 }
 
 LuaEngine::~LuaEngine() = default;

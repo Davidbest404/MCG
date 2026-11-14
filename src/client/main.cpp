@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -20,6 +21,7 @@ int main(int argc, char** argv)
 #endif
 
     mcg::log::init("mcg_client", "logs", spdlog::level::info);
+    MCG_INFO("MCG client starting");
 
     std::string host = "127.0.0.1";
     uint16_t port = 0;
@@ -84,30 +86,51 @@ int main(int argc, char** argv)
         conn.send(mcg::protocol::MessageType::Ping, {{"msg", "hello"}});
         conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/map"}});
 
+#ifdef _WIN32
+        // Состояния физических клавиш (не зависят от раскладки)
+        static bool key_w = false, key_a = false, key_s = false, key_d = false;
+        static bool key_space = false, key_shift = false, key_t = false, key_enter = false;
+
+        auto is_pressed = [](int vk, bool& prev)
+        {
+            bool curr = (GetAsyncKeyState(vk) & 0x8000) != 0;
+            bool result = curr && !prev;
+            prev = curr;
+            return result;
+        };
+#endif
+
         while (running)
         {
-            int key = ui.read_key_non_blocking();
-
-            if (key > 0)
+            if (game_mode)
             {
-                if (key == 3)
-                {
-                    running = false;
-                    break;
-                } // Ctrl+C
+#ifdef _WIN32
+                // --- РЕЖИМ ИГРЫ (Windows) ---
+                if (is_pressed('W', key_w))
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move north"}});
+                if (is_pressed('S', key_s))
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move south"}});
+                if (is_pressed('A', key_a))
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move west"}});
+                if (is_pressed('D', key_d))
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move east"}});
+                if (is_pressed(VK_SPACE, key_space))
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move up"}});
+                if (is_pressed(VK_SHIFT, key_shift))
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move down"}});
 
-                // Логируем нажатие для отладки (увидишь в файле лога)
-                MCG_DEBUG("Key pressed: {} ({})", key, static_cast<char>(key));
-
-                if (game_mode)
+                if (is_pressed('T', key_t) || is_pressed(VK_RETURN, key_enter))
                 {
-                    // РЕЖИМ ИГРЫ
-                    if (key == 'T' || key == 't')
-                    {
-                        game_mode = false;
-                        input_buffer.clear();
-                    }
-                    else if (key == 'w' || key == 'W')
+                    game_mode = false;
+                    input_buffer.clear();
+                    dirty = true;
+                }
+#else
+                // --- РЕЖИМ ИГРЫ (Linux/macOS) ---
+                int key = ui.read_key_non_blocking();
+                if (key > 0)
+                {
+                    if (key == 'w' || key == 'W')
                         conn.send(mcg::protocol::MessageType::ChatMessage,
                                   {{"text", "/move north"}});
                     else if (key == 's' || key == 'S')
@@ -121,49 +144,77 @@ int main(int argc, char** argv)
                                   {{"text", "/move east"}});
                     else if (key == ' ')
                         conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move up"}});
-                    // Shift в Windows _getch может не ловиться, используем 'c' для спуска
-                    else if (key == 'c' || key == 'C')
+                    else if (key == 'z' || key == 'Z')
                         conn.send(mcg::protocol::MessageType::ChatMessage,
                                   {{"text", "/move down"}});
-
+                    else if (key == 'T' || key == 't' || key == 13 || key == 10)
+                    {
+                        game_mode = false;
+                        input_buffer.clear();
+                    }
                     dirty = true;
                 }
-                else
+#endif
+            }
+            else
+            {
+                // --- РЕЖИМ ЧАТА ---
+                int key = ui.read_key_non_blocking();
+                if (key > 0)
                 {
-                    // РЕЖИМ ЧАТА
-                    if (key == 13 || key == '\n')
-                    { // Enter
+                    if (key == 3)
+                    {
+                        running = false;
+                        break;
+                    }
+
+                    if (key == 13 || key == 10)
+                    {
                         if (!input_buffer.empty())
                         {
                             conn.send(mcg::protocol::MessageType::ChatMessage,
                                       {{"text", input_buffer}});
                             input_buffer.clear();
                         }
-                        game_mode = true; // Возвращаемся в игру
+                        game_mode = true;
                     }
                     else if (key == 27)
-                    { // Esc
+                    {
                         input_buffer.clear();
                         game_mode = true;
                     }
                     else if (key == 8 || key == 127)
-                    { // Backspace
+                    {
                         if (!input_buffer.empty()) input_buffer.pop_back();
                     }
                     else if (key >= 32 && key <= 126)
                     {
                         input_buffer.push_back(static_cast<char>(key));
                     }
-
+                    else if (key >= 128)
+                    {
+                        // Для русских букв (в Windows они приходят как 2 байта при CP_UTF8)
+                        input_buffer.push_back(static_cast<char>(key));
+                    }
                     dirty = true;
                 }
             }
 
             if (dirty)
             {
-                std::lock_guard<std::mutex> lock(data_mutex);
-                ui.draw(current_map, chat_history, input_buffer, game_mode);
-                dirty = false;
+                std::string map_copy;
+                std::vector<std::string> chat_copy;
+                std::string input_copy;
+                bool mode_copy;
+                {
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    map_copy = current_map;
+                    chat_copy = chat_history;
+                    input_copy = input_buffer;
+                    mode_copy = game_mode;
+                    dirty = false;
+                }
+                ui.draw(map_copy, chat_copy, input_copy, mode_copy);
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
