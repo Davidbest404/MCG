@@ -17,64 +17,31 @@ int main(int argc, char** argv)
 #endif
 
     mcg::log::init("mcg_client", "logs", spdlog::level::info);
-    MCG_INFO("MCG client starting (Phase 2 — network)");
+    MCG_INFO("MCG client starting (Phase 4 — commands)");
 
     std::string host = "127.0.0.1";
     uint16_t port = 0;
     bool port_provided = false;
 
-    // Проверяем аргументы командной строки
     for (int i = 1; i < argc; ++i)
     {
         std::string arg = argv[i];
         if ((arg == "--host" || arg == "-h") && i + 1 < argc)
-        {
             host = argv[++i];
-        }
         else if ((arg == "--port" || arg == "-p") && i + 1 < argc)
         {
-            try
-            {
-                int val = std::stoi(argv[++i]);
-                if (val < 0 || val > 65535) throw std::out_of_range("port out of range");
-                port = static_cast<uint16_t>(val);
-                port_provided = true;
-            }
-            catch (...)
-            {
-                MCG_ERROR("Invalid port argument");
-                return 1;
-            }
+            port = static_cast<uint16_t>(std::stoi(argv[++i]));
+            port_provided = true;
         }
     }
 
-    // Интерактивный ввод, если порт не передан
     if (!port_provided)
     {
         std::cout << "Enter server port (default 7777): ";
         std::string input;
         std::getline(std::cin, input);
-        if (!input.empty())
-        {
-            try
-            {
-                int val = std::stoi(input);
-                if (val < 0 || val > 65535) throw std::out_of_range("port out of range");
-                port = static_cast<uint16_t>(val);
-            }
-            catch (...)
-            {
-                MCG_WARN("Invalid input, defaulting to 7777");
-                port = 7777;
-            }
-        }
-        else
-        {
-            port = 7777;
-        }
+        port = input.empty() ? 7777 : static_cast<uint16_t>(std::stoi(input));
     }
-
-    MCG_INFO("Connecting to {}:{}", host, port);
 
     try
     {
@@ -85,17 +52,30 @@ int main(int argc, char** argv)
             {
                 if (type == mcg::protocol::MessageType::Pong)
                 {
-                    MCG_INFO("Received Pong: {}", payload.dump());
+                    MCG_INFO("Received Pong: HP={}", payload.value("hp", 0));
+                }
+                else if (type == mcg::protocol::MessageType::ChatMessage)
+                {
+                    std::string from = payload.value("from", "?");
+                    std::string text = payload.value("text", "");
+                    std::cout << "[" << from << "]: " << text << std::endl;
                 }
             });
 
         conn.connect();
-
-        MCG_INFO("Sending Ping...");
         conn.send(mcg::protocol::MessageType::Ping, {{"msg", "hello"}});
 
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-        conn.disconnect();
+        std::cout << "Connected! Type messages or /commands. Ctrl+C to exit." << std::endl;
+
+        // Читаем ввод пользователя
+        std::string line;
+        while (std::getline(std::cin, line))
+        {
+            if (line.empty()) continue;
+
+            nlohmann::json msg = {{"text", line}};
+            conn.send(mcg::protocol::MessageType::ChatMessage, msg);
+        }
     }
     catch (const std::exception& e)
     {
