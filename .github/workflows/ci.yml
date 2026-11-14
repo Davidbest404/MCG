@@ -16,38 +16,28 @@ jobs:
         include:
           - os: ubuntu-latest
             name: gcc
-            cc: gcc-13
-            cxx: g++-13
+            cc: gcc
+            cxx: g++
           - os: ubuntu-latest
             name: clang
-            cc: clang-18      # Изменено
-            cxx: clang++-18   # Изменено
+            cc: clang
+            cxx: clang++
           - os: windows-latest
             name: msvc
             cc: cl
             cxx: cl
-          - os: macos-latest
-            name: clang
-            cc: clang
-            cxx: clang++
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install compilers (Ubuntu)
+      - name: Install Ninja (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          # Устанавливаем компиляторы из стандартных репозиториев
-          sudo apt-get install -y ninja-build gcc-13 g++-13 clang-18
+          sudo apt-get install -y ninja-build clang
 
-      - name: Setup CMake + Ninja
+      - name: Setup CMake
         uses: lukka/get-cmake@latest
-
-      - name: Setup SDKROOT (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
 
       - name: Configure (Unix)
         if: matrix.os != 'windows-latest'
@@ -55,8 +45,7 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=${{ matrix.cc }} \
-            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
-            -DCMAKE_OSX_SYSROOT=macosx
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
 
       - name: Configure (Windows)
         if: matrix.os == 'windows-latest'

@@ -32,15 +32,16 @@ set(FETCHCONTENT_QUIET OFF)
 
 FetchContent_Declare(fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG        11.0.2  # Обновлено
+    GIT_TAG        10.2.1
     GIT_SHALLOW    TRUE)
 FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.15.0 # Обновлено
+    GIT_TAG        v1.14.1
     GIT_SHALLOW    TRUE)
-
-# Указываем spdlog использовать внешний fmt
-set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "" FORCE)
+FetchContent_Declare(json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+    GIT_SHALLOW    TRUE)
 
 FetchContent_MakeAvailable(fmt spdlog json)
 
