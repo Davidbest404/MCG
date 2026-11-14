@@ -78,17 +78,3 @@ frame_id — идентификатор рамки. Клиент ищет
 Сервер → AuthResult: {"ok": true, "player_id": 42, "rules": "...", "description": "..."}
 
 Сервер → ChatMessage: приветствие от System.
-
----
-
-## 4. Что делать
-
-### Шаг 4.1. Создай папки
-
-```powershell
-cd C:\Projects\MCG-clean
-New-Item -ItemType Directory -Force -Path `
-    "src\shared\math", `
-    "src\shared\attributes", `
-    "src\shared\color", `
-    "src\shared\protocol"
