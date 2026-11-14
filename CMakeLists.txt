@@ -29,17 +29,18 @@ option(MCG_BUILD_CLIENT "Build client"      ON)
 # ---- Dependencies ----
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 FetchContent_Declare(fmt
-    URL https://github.com/fmtlib/fmt/archive/refs/tags/10.2.1.tar.gz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+    GIT_TAG        11.0.2  # Обновлено
+    GIT_SHALLOW    TRUE)
 FetchContent_Declare(spdlog
-    URL https://github.com/gabime/spdlog/archive/refs/tags/v1.14.1.tar.gz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-FetchContent_Declare(json
-    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.15.0 # Обновлено
+    GIT_SHALLOW    TRUE)
+
+# Указываем spdlog использовать внешний fmt
+set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(fmt spdlog json)
 
