@@ -10,8 +10,11 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <conio.h>
 #include <windows.h>
 #endif
+
+static std::atomic<bool> g_running{true};
 
 int main(int argc, char** argv)
 {
@@ -57,7 +60,6 @@ int main(int argc, char** argv)
         std::vector<std::string> chat_history;
         std::string input_buffer = "";
         bool game_mode = true;
-        std::atomic<bool> running{true};
         std::atomic<bool> dirty{true};
 
         conn.set_message_callback(
@@ -70,6 +72,7 @@ int main(int argc, char** argv)
                     std::string text = payload.value("text", "");
                     std::string prefix = (from == "System") ? "[cE]" : "[cA]";
                     chat_history.push_back(prefix + "[" + from + "]: [c7]" + text);
+                    if (chat_history.size() > 50) chat_history.erase(chat_history.begin());
                     dirty = true;
                 }
                 else if (type == mcg::protocol::MessageType::WorldSnapshot)
@@ -87,11 +90,10 @@ int main(int argc, char** argv)
         conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/map"}});
 
 #ifdef _WIN32
-        // Состояния физических клавиш (не зависят от раскладки)
-        static bool key_w = false, key_a = false, key_s = false, key_d = false;
-        static bool key_space = false, key_shift = false, key_t = false, key_enter = false;
+        bool prev_w = false, prev_a = false, prev_s = false, prev_d = false;
+        bool prev_space = false, prev_shift = false, prev_enter = false, prev_esc = false;
 
-        auto is_pressed = [](int vk, bool& prev)
+        auto press = [](int vk, bool& prev) -> bool
         {
             bool curr = (GetAsyncKeyState(vk) & 0x8000) != 0;
             bool result = curr && !prev;
@@ -100,76 +102,76 @@ int main(int argc, char** argv)
         };
 #endif
 
-        while (running)
+        while (g_running)
         {
             if (game_mode)
             {
 #ifdef _WIN32
-                // --- РЕЖИМ ИГРЫ (Windows) ---
-                if (is_pressed('W', key_w))
+                // === ИГРОВОЙ РЕЖИМ (Windows) ===
+                if (press('W', prev_w))
                     conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move north"}});
-                if (is_pressed('S', key_s))
+                if (press('S', prev_s))
                     conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move south"}});
-                if (is_pressed('A', key_a))
+                if (press('A', prev_a))
                     conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move west"}});
-                if (is_pressed('D', key_d))
+                if (press('D', prev_d))
                     conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move east"}});
-                if (is_pressed(VK_SPACE, key_space))
+                if (press(VK_SPACE, prev_space))
                     conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move up"}});
-                if (is_pressed(VK_SHIFT, key_shift))
+                if (press(VK_SHIFT, prev_shift))
                     conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move down"}});
 
-                if (is_pressed('T', key_t) || is_pressed(VK_RETURN, key_enter))
+                if (press(VK_RETURN, prev_enter))
                 {
                     game_mode = false;
                     input_buffer.clear();
+                    ui.flush_input_buffer(); // Очищаем буфер после нажатий WASD
                     dirty = true;
                 }
+
+                // ВАЖНО: в игре мы полностью очищаем входной буфер, чтобы клавиши не копились
+                while (_kbhit())
+                    _getch();
+
 #else
-                // --- РЕЖИМ ИГРЫ (Linux/macOS) ---
+                // === ИГРОВОЙ РЕЖИМ (Linux/macOS) ===
                 int key = ui.read_key_non_blocking();
-                if (key > 0)
+                if (key == 'w' || key == 'W')
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move north"}});
+                else if (key == 's' || key == 'S')
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move south"}});
+                else if (key == 'a' || key == 'A')
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move west"}});
+                else if (key == 'd' || key == 'D')
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move east"}});
+                else if (key == ' ')
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move up"}});
+                else if (key == 'z' || key == 'Z')
+                    conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move down"}});
+                else if (key == 13 || key == 10)
                 {
-                    if (key == 'w' || key == 'W')
-                        conn.send(mcg::protocol::MessageType::ChatMessage,
-                                  {{"text", "/move north"}});
-                    else if (key == 's' || key == 'S')
-                        conn.send(mcg::protocol::MessageType::ChatMessage,
-                                  {{"text", "/move south"}});
-                    else if (key == 'a' || key == 'A')
-                        conn.send(mcg::protocol::MessageType::ChatMessage,
-                                  {{"text", "/move west"}});
-                    else if (key == 'd' || key == 'D')
-                        conn.send(mcg::protocol::MessageType::ChatMessage,
-                                  {{"text", "/move east"}});
-                    else if (key == ' ')
-                        conn.send(mcg::protocol::MessageType::ChatMessage, {{"text", "/move up"}});
-                    else if (key == 'z' || key == 'Z')
-                        conn.send(mcg::protocol::MessageType::ChatMessage,
-                                  {{"text", "/move down"}});
-                    else if (key == 'T' || key == 't' || key == 13 || key == 10)
-                    {
-                        game_mode = false;
-                        input_buffer.clear();
-                    }
+                    game_mode = false;
+                    input_buffer.clear();
+                    ui.flush_input_buffer();
                     dirty = true;
                 }
 #endif
             }
             else
             {
-                // --- РЕЖИМ ЧАТА ---
+                // === РЕЖИМ ЧАТА ===
                 int key = ui.read_key_non_blocking();
                 if (key > 0)
                 {
                     if (key == 3)
                     {
-                        running = false;
+                        g_running = false;
                         break;
                     }
 
                     if (key == 13 || key == 10)
                     {
+                        // Отправка сообщения и возврат в игру
                         if (!input_buffer.empty())
                         {
                             conn.send(mcg::protocol::MessageType::ChatMessage,
@@ -177,6 +179,9 @@ int main(int argc, char** argv)
                             input_buffer.clear();
                         }
                         game_mode = true;
+#ifdef _WIN32
+                        prev_enter = true; // Защита от повторного срабатывания
+#endif
                     }
                     else if (key == 27)
                     {
@@ -187,13 +192,8 @@ int main(int argc, char** argv)
                     {
                         if (!input_buffer.empty()) input_buffer.pop_back();
                     }
-                    else if (key >= 32 && key <= 126)
+                    else if (key >= 32)
                     {
-                        input_buffer.push_back(static_cast<char>(key));
-                    }
-                    else if (key >= 128)
-                    {
-                        // Для русских букв (в Windows они приходят как 2 байта при CP_UTF8)
                         input_buffer.push_back(static_cast<char>(key));
                     }
                     dirty = true;

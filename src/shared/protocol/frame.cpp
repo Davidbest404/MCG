@@ -8,23 +8,21 @@ namespace mcg::protocol
 
 std::vector<uint8_t> encode_frame(MessageType type, const nlohmann::json& payload)
 {
-    const std::string body = payload.dump();
+    // ИСПРАВЛЕНО: error_handler_t::replace защищает от краша на русских буквах
+    const std::string body = payload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     const uint32_t total_size = static_cast<uint32_t>(4u + 2u + body.size());
 
     std::vector<uint8_t> out(total_size);
 
-    // frame_size (little-endian), байты 0..3
     out[0] = static_cast<uint8_t>(total_size & 0xFFu);
     out[1] = static_cast<uint8_t>((total_size >> 8) & 0xFFu);
     out[2] = static_cast<uint8_t>((total_size >> 16) & 0xFFu);
     out[3] = static_cast<uint8_t>((total_size >> 24) & 0xFFu);
 
-    // msg_type (little-endian), байты 4..5
     const uint16_t t = static_cast<uint16_t>(type);
     out[4] = static_cast<uint8_t>(t & 0xFFu);
     out[5] = static_cast<uint8_t>((t >> 8) & 0xFFu);
 
-    // payload
     if (!body.empty())
     {
         std::memcpy(out.data() + 6, body.data(), body.size());

@@ -1,6 +1,8 @@
-#include "server/world/world.h"
+﻿#include "server/world/world.h"
 #include "shared/util/logging.h"
 #include <cmath>
+#include <exception>
+
 
 namespace mcg::server
 {
@@ -18,102 +20,52 @@ uint64_t World::hash_chunk(int cx, int cy, int cz) const
            static_cast<uint64_t>(static_cast<uint32_t>(cz) & 0xFFFFF);
 }
 
-void World::generate_terrain_chunk(int cx, int cy, int cz) const
+void World::ensure_chunk(int cx, int cy, int cz) const
 {
-    TerrainChunk chunk;
-    for (int x = 0; x < CHUNK_SIZE; ++x)
+    uint64_t hash = hash_chunk(cx, cy, cz);
+    if (terrain_chunks_.find(hash) == terrain_chunks_.end())
     {
-        for (int y = 0; y < CHUNK_SIZE; ++y)
+        auto& terrain = terrain_chunks_[hash];
+        for (int x = 0; x < CHUNK_SIZE; ++x)
+            for (int y = 0; y < CHUNK_SIZE; ++y)
+                for (int z = 0; z < CHUNK_SIZE; ++z)
+                    terrain.tiles[x][y][z] = {"", "000000", "", true, true, false, 0, 1.0f};
+
+        auto& overlay = overlay_chunks_[hash];
+        for (int x = 0; x < CHUNK_SIZE; ++x)
+            for (int y = 0; y < CHUNK_SIZE; ++y)
+                for (int z = 0; z < CHUNK_SIZE; ++z)
+                {
+                    overlay.present[x][y][z] = false;
+                    overlay.overlays[x][y][z] = {"", "000000", "", true, true, false, 0, 1.0f};
+                }
+
+        // 1. Сначала генерируем базовый мир
+        if (generator_cb_)
         {
-            int gx = cx * CHUNK_SIZE + x;
-            int gy = cy * CHUNK_SIZE + y;
-
-            double h = perlin_.noise2d(gx * 0.05, gy * 0.05);
-            int terrain_height = static_cast<int>(h * 8.0);
-
-            if (gx >= -3 && gx <= 3 && gy >= -3 && gy <= 3)
+            try
             {
-                terrain_height = 0;
+                generator_cb_(cx, cy, cz);
             }
-
-            for (int z = 0; z < CHUNK_SIZE; ++z)
+            catch (const std::exception& e)
             {
-                int gz = cz * CHUNK_SIZE + z;
-                if (gz > terrain_height)
-                {
-                    chunk.tiles[x][y][z] = {' ', true};
-                }
-                else if (gz == terrain_height)
-                {
-                    chunk.tiles[x][y][z] = {'#', false};
-                }
-                else
-                {
-                    double cave = perlin_.noise2d(gx * 0.1 + 100, gy * 0.1 + 100);
-                    if (std::abs(cave) < 0.15 && gz < -2)
-                    {
-                        chunk.tiles[x][y][z] = {' ', true};
-                    }
-                    else
-                    {
-                        chunk.tiles[x][y][z] = {'#', false};
-                    }
-                }
+                MCG_ERROR("Exception in generator: {}", e.what());
+            }
+        }
+
+        // 2. Потом добавляем украшения (деревья, цветы)
+        if (decorator_cb_)
+        {
+            try
+            {
+                decorator_cb_(cx, cy, cz);
+            }
+            catch (const std::exception& e)
+            {
+                MCG_ERROR("Exception in decorator: {}", e.what());
             }
         }
     }
-    terrain_chunks_[hash_chunk(cx, cy, cz)] = chunk;
-}
-
-void World::generate_overlay_chunk(int cx, int cy, int cz) const
-{
-    OverlayChunk chunk;
-    for (int x = 0; x < CHUNK_SIZE; ++x)
-        for (int y = 0; y < CHUNK_SIZE; ++y)
-            for (int z = 0; z < CHUNK_SIZE; ++z)
-            {
-                chunk.present[x][y][z] = false;
-                chunk.overlays[x][y][z] = {' ', true};
-            }
-
-    for (int x = 0; x < CHUNK_SIZE; ++x)
-    {
-        for (int y = 0; y < CHUNK_SIZE; ++y)
-        {
-            int gx = cx * CHUNK_SIZE + x;
-            int gy = cy * CHUNK_SIZE + y;
-
-            double h = perlin_.noise2d(gx * 0.05, gy * 0.05);
-            int terrain_height = static_cast<int>(h * 8.0);
-            if (gx >= -3 && gx <= 3 && gy >= -3 && gy <= 3) terrain_height = 0;
-
-            int overlay_z = terrain_height + 1;
-
-            for (int z = 0; z < CHUNK_SIZE; ++z)
-            {
-                int gz = cz * CHUNK_SIZE + z;
-                if (gz == overlay_z)
-                {
-                    if (terrain_height <= -1)
-                    {
-                        chunk.overlays[x][y][z] = {'~', false}; // ����
-                        chunk.present[x][y][z] = true;
-                    }
-                    else if (terrain_height >= 6)
-                    {
-                        chunk.overlays[x][y][z] = {'*', true}; // ����
-                        chunk.present[x][y][z] = true;
-                    }
-                    else
-                    {
-                        chunk.overlays[x][y][z] = {'"', true}; // �����
-                        chunk.present[x][y][z] = true;
-                    }
-                }
-            }
-        }
-    }
-    overlay_chunks_[hash_chunk(cx, cy, cz)] = chunk;
 }
 
 Tile World::get_terrain(int x, int y, int z) const
@@ -123,10 +75,9 @@ Tile World::get_terrain(int x, int y, int z) const
     if (y < 0 && y % CHUNK_SIZE != 0) cy--;
     if (z < 0 && z % CHUNK_SIZE != 0) cz--;
 
-    uint64_t hash = hash_chunk(cx, cy, cz);
-    if (terrain_chunks_.find(hash) == terrain_chunks_.end()) generate_terrain_chunk(cx, cy, cz);
+    ensure_chunk(cx, cy, cz);
 
-    const TerrainChunk& chunk = terrain_chunks_.at(hash);
+    const TerrainChunk& chunk = terrain_chunks_.at(hash_chunk(cx, cy, cz));
     return chunk.tiles[x - cx * CHUNK_SIZE][y - cy * CHUNK_SIZE][z - cz * CHUNK_SIZE];
 }
 
@@ -137,10 +88,9 @@ bool World::has_overlay(int x, int y, int z) const
     if (y < 0 && y % CHUNK_SIZE != 0) cy--;
     if (z < 0 && z % CHUNK_SIZE != 0) cz--;
 
-    uint64_t hash = hash_chunk(cx, cy, cz);
-    if (overlay_chunks_.find(hash) == overlay_chunks_.end()) generate_overlay_chunk(cx, cy, cz);
+    ensure_chunk(cx, cy, cz);
 
-    const OverlayChunk& chunk = overlay_chunks_.at(hash);
+    const OverlayChunk& chunk = overlay_chunks_.at(hash_chunk(cx, cy, cz));
     return chunk.present[x - cx * CHUNK_SIZE][y - cy * CHUNK_SIZE][z - cz * CHUNK_SIZE];
 }
 
@@ -151,11 +101,23 @@ Tile World::get_overlay(int x, int y, int z) const
     if (y < 0 && y % CHUNK_SIZE != 0) cy--;
     if (z < 0 && z % CHUNK_SIZE != 0) cz--;
 
-    uint64_t hash = hash_chunk(cx, cy, cz);
-    if (overlay_chunks_.find(hash) == overlay_chunks_.end()) generate_overlay_chunk(cx, cy, cz);
+    ensure_chunk(cx, cy, cz);
 
-    const OverlayChunk& chunk = overlay_chunks_.at(hash);
+    const OverlayChunk& chunk = overlay_chunks_.at(hash_chunk(cx, cy, cz));
     return chunk.overlays[x - cx * CHUNK_SIZE][y - cy * CHUNK_SIZE][z - cz * CHUNK_SIZE];
+}
+
+void World::set_terrain(int x, int y, int z, Tile t)
+{
+    int cx = x / CHUNK_SIZE, cy = y / CHUNK_SIZE, cz = z / CHUNK_SIZE;
+    if (x < 0 && x % CHUNK_SIZE != 0) cx--;
+    if (y < 0 && y % CHUNK_SIZE != 0) cy--;
+    if (z < 0 && z % CHUNK_SIZE != 0) cz--;
+
+    ensure_chunk(cx, cy, cz);
+
+    TerrainChunk& chunk = terrain_chunks_.at(hash_chunk(cx, cy, cz));
+    chunk.tiles[x - cx * CHUNK_SIZE][y - cy * CHUNK_SIZE][z - cz * CHUNK_SIZE] = t;
 }
 
 void World::set_overlay(int x, int y, int z, Tile t)
@@ -165,15 +127,14 @@ void World::set_overlay(int x, int y, int z, Tile t)
     if (y < 0 && y % CHUNK_SIZE != 0) cy--;
     if (z < 0 && z % CHUNK_SIZE != 0) cz--;
 
-    uint64_t hash = hash_chunk(cx, cy, cz);
-    if (overlay_chunks_.find(hash) == overlay_chunks_.end()) generate_overlay_chunk(cx, cy, cz);
+    ensure_chunk(cx, cy, cz);
 
-    OverlayChunk& chunk = overlay_chunks_.at(hash);
+    OverlayChunk& chunk = overlay_chunks_.at(hash_chunk(cx, cy, cz));
     int lx = x - cx * CHUNK_SIZE;
     int ly = y - cy * CHUNK_SIZE;
     int lz = z - cz * CHUNK_SIZE;
     chunk.overlays[lx][ly][lz] = t;
-    chunk.present[lx][ly][lz] = (t.symbol != ' ');
+    chunk.present[lx][ly][lz] = (t.symbol != "");
 }
 
 bool World::is_walkable(int x, int y, int z) const
@@ -181,6 +142,25 @@ bool World::is_walkable(int x, int y, int z) const
     if (!get_terrain(x, y, z).walkable) return false;
     if (has_overlay(x, y, z)) return get_overlay(x, y, z).walkable;
     return true;
+}
+
+bool World::is_transparent(int x, int y, int z) const
+{
+    if (!get_terrain(x, y, z).transparent) return false;
+    if (has_overlay(x, y, z)) return get_overlay(x, y, z).transparent;
+    return true;
+}
+
+bool World::is_column_blocked(int x, int y, int z_min, int z_max) const
+{
+    for (int z = z_min; z <= z_max; ++z)
+    {
+        if (has_overlay(x, y, z) && !get_overlay(x, y, z).transparent)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 int World::get_surface_z(int x, int y) const

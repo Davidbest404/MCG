@@ -3,11 +3,12 @@
 #include "server/world/world.h"
 #include <functional>
 #include <memory>
-#include <nlohmann/json.hpp> // днаюбкемн ДКЪ nlohmann::json
+#include <nlohmann/json.hpp>
 #include <sol/sol.hpp>
 #include <string>
 #include <unordered_map>
-#include <utility> // днаюбкемн ДКЪ std::move
+#include <utility>
+#include <vector>
 
 namespace mcg::server
 {
@@ -33,7 +34,9 @@ public:
 
     void run_script(const std::string& path);
     void on_player_connect(std::shared_ptr<Player> player);
+    void on_generate_chunk(int cx, int cy, int cz);
     void load_commands(const std::string& commands_dir);
+    void load_decorators(const std::string& biomes_dir); // мнбне
     LuaCommand* find_command(const std::string& name);
     const std::unordered_map<std::string, LuaCommand>& commands() const { return commands_; }
 
@@ -48,6 +51,7 @@ private:
     sol::state lua_;
     World& world_;
     std::unordered_map<std::string, LuaCommand> commands_;
+    std::vector<sol::protected_function> decorators_; // мнбне
     BroadcastCallback broadcast_cb_;
     MapUpdateCallback map_update_cb_;
 };

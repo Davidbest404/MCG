@@ -5,8 +5,7 @@ namespace mcg::color
 
 namespace
 {
-
-bool parse_hex_digit(char c, int& out)
+bool parse_hex(char c, int& out)
 {
     if (c >= '0' && c <= '9')
     {
@@ -26,18 +25,10 @@ bool parse_hex_digit(char c, int& out)
     return false;
 }
 
-// ¬озвращает:
-//   0 Ч это не тег (обычный символ '[')
-//   1 Ч открывающий [cX]
-//   2 Ч открывающий [bgX]
-//   3 Ч закрывающий [/c] или [/cX]
-//   4 Ч закрывающий [/bg] или [/bgX]
-// tag_len Ч сколько символов занимает тег.
-// color   Ч hex-значение (0..15) или -1, если закрывающий без значени€.
-int detect_tag(std::string_view s, std::size_t pos, std::size_t& tag_len, int& color)
+// 0 - not tag, 1 - fg, 2 - bg, 3 - /fg, 4 - /bg
+int detect_tag(std::string_view s, std::size_t pos, std::size_t& tag_len, uint32_t& color)
 {
     if (pos >= s.size() || s[pos] != '[') return 0;
-
     std::size_t i = pos + 1;
     bool closing = false;
     if (i < s.size() && s[i] == '/')
@@ -57,27 +48,24 @@ int detect_tag(std::string_view s, std::size_t pos, std::size_t& tag_len, int& c
         ++i;
     }
     else
-    {
         return 0;
-    }
 
-    int hex_val = -1;
-    bool has_hex = false;
-    if (i < s.size())
+    uint32_t hex_val = 0xFFFFFFFF;
+    int digits = 0;
+    while (i < s.size() && s[i] != ']')
     {
-        int tmp = 0;
-        if (parse_hex_digit(s[i], tmp))
-        {
-            has_hex = true;
-            hex_val = tmp;
-            ++i;
-        }
+        int val;
+        if (!parse_hex(s[i], val)) return 0;
+        if (digits == 0)
+            hex_val = val;
+        else
+            hex_val = (hex_val << 4) | val;
+        digits++;
+        i++;
     }
 
     if (i >= s.size() || s[i] != ']') return 0;
-
-    // ќткрывающий тег без hex-значени€ Ч не тег.
-    if (!closing && !has_hex) return 0;
+    if (!closing && digits != 1 && digits != 6) return 0; // “олько 1 или 6 символов
 
     tag_len = (i + 1) - pos;
     color = hex_val;
@@ -85,19 +73,15 @@ int detect_tag(std::string_view s, std::size_t pos, std::size_t& tag_len, int& c
     if (!closing) return is_bg ? 2 : 1;
     return is_bg ? 4 : 3;
 }
-
 } // namespace
 
 ParseResult parse_colored(std::string_view input)
 {
     ParseResult result;
-
     struct State
     {
-        int fg = -1;
-        int bg = -1;
+        uint32_t fg = 0xFFFFFFFF, bg = 0xFFFFFFFF;
     };
-
     State current;
     std::vector<State> stack;
     std::string buffer;
@@ -117,8 +101,8 @@ ParseResult parse_colored(std::string_view input)
         if (input[i] == '[')
         {
             std::size_t tag_len = 0;
-            int color = -1;
-            const int kind = detect_tag(input, i, tag_len, color);
+            uint32_t color = 0xFFFFFFFF;
+            int kind = detect_tag(input, i, tag_len, color);
             if (kind == 0)
             {
                 buffer.push_back(input[i]);
@@ -129,39 +113,27 @@ ParseResult parse_colored(std::string_view input)
             flush();
             switch (kind)
             {
-            case 1: // [cX]
+            case 1:
                 stack.push_back(current);
                 current.fg = color;
                 break;
-            case 2: // [bgX]
+            case 2:
                 stack.push_back(current);
                 current.bg = color;
                 break;
-            case 3: // [/c] или [/cX]
+            case 3:
                 if (!stack.empty())
                 {
                     current = stack.back();
                     stack.pop_back();
                 }
-                else
-                {
-                    result.had_errors = true;
-                    result.errors.emplace_back("Unmatched [/c]");
-                }
                 break;
-            case 4: // [/bg] или [/bgX]
+            case 4:
                 if (!stack.empty())
                 {
                     current = stack.back();
                     stack.pop_back();
                 }
-                else
-                {
-                    result.had_errors = true;
-                    result.errors.emplace_back("Unmatched [/bg]");
-                }
-                break;
-            default:
                 break;
             }
             i += tag_len;
@@ -172,55 +144,16 @@ ParseResult parse_colored(std::string_view input)
             ++i;
         }
     }
-
     flush();
-
-    if (!stack.empty())
-    {
-        result.had_errors = true;
-        result.errors.emplace_back("Unclosed tags at end of input");
-    }
-
     return result;
 }
 
 std::string to_tagged_string(const ParseResult& parsed)
 {
-    static constexpr char kHex[] = "0123456789ABCDEF";
+    // «аглушка дл€ обратной совместимости
     std::string out;
-    int cur_fg = -1;
-    int cur_bg = -1;
-
     for (const auto& seg : parsed.segments)
-    {
-        if (seg.fg_color != cur_fg)
-        {
-            if (cur_fg != -1) out += "[/c]";
-            if (seg.fg_color != -1)
-            {
-                out += "[c";
-                out += kHex[seg.fg_color];
-                out += "]";
-            }
-            cur_fg = seg.fg_color;
-        }
-        if (seg.bg_color != cur_bg)
-        {
-            if (cur_bg != -1) out += "[/bg]";
-            if (seg.bg_color != -1)
-            {
-                out += "[bg";
-                out += kHex[seg.bg_color];
-                out += "]";
-            }
-            cur_bg = seg.bg_color;
-        }
         out += seg.text;
-    }
-
-    if (cur_fg != -1) out += "[/c]";
-    if (cur_bg != -1) out += "[/bg]";
-
     return out;
 }
 

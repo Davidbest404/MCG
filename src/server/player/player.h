@@ -20,6 +20,7 @@ public:
         attributes_.set("pos_x", 0);
         attributes_.set("pos_y", 0);
         attributes_.set("pos_z", 0);
+        attributes_.set("max_step_up", 1);
     }
 
     uint64_t id() const { return id_; }

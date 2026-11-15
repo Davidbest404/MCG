@@ -33,6 +33,17 @@ void Server::run()
                 network_->send(it->second, mcg::protocol::MessageType::WorldSnapshot, payload);
             }
         });
+
+    // 1. Общие функции генерации (get_height, get_biome)
+    lua_->run_script("lua/world/common.lua");
+
+    // 2. Базовый ландшафт
+    lua_->run_script("lua/world/generator.lua");
+
+    // 3. Биомы (деревья, цветы, кактусы)
+    lua_->load_decorators("lua/world/biomes");
+
+    // 4. Команды игроков (/map, /move, /fly, /flower, /stats)
     lua_->load_commands("lua/actions/commands");
 
     try
