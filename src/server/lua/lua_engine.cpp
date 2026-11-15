@@ -79,6 +79,7 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                          world_.set_terrain(x, y, z, t);
                      });
 
+    // ИСПРАВЛЕНО: прозрачные объекты (цветы) автоматически проходимы
     api.set_function(
         "set_overlay",
         [this](int x, int y, int z, std::string sym, std::string color, bool transparent)
@@ -86,7 +87,7 @@ LuaEngine::LuaEngine(World& world) : world_(world)
             Tile t;
             t.symbol = sym;
             t.color_hex = color;
-            t.walkable = false;
+            t.walkable = transparent; // прозрачные = проходимые
             t.transparent = transparent;
             world_.set_overlay(x, y, z, t);
         });
@@ -94,7 +95,6 @@ LuaEngine::LuaEngine(World& world) : world_(world)
     world_.set_generator_callback([this](int cx, int cy, int cz)
                                   { this->on_generate_chunk(cx, cy, cz); });
 
-    // ВАЖНО: вызываем все зарегистрированные декораторы
     world_.set_decorator_callback(
         [this](int cx, int cy, int cz)
         {
@@ -128,19 +128,19 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                 int pz = p.attributes().get("pos_z").get<int>();
                 int radius = 8;
                 int render_depth = 10;
-                int ceiling_height = 20;
                 int max_step_up = 1;
 
                 auto js_depth = p.attributes().get("render_depth");
                 if (js_depth.is_number_integer()) render_depth = js_depth.get<int>();
 
+                // ИСПРАВЛЕНО: ceiling_height редактируется (дефолт 20 для topdown)
+                int ceiling_height = 20;
                 auto js_ceil = p.attributes().get("ceiling_height");
                 if (js_ceil.is_number_integer()) ceiling_height = js_ceil.get<int>();
 
                 auto js_step = p.attributes().get("max_step_up");
                 if (js_step.is_number_integer()) max_step_up = js_step.get<int>();
 
-                // Один параметр для света и тьмы (для симметрии)
                 float light_step = 1.25f;
                 auto js_ls = p.attributes().get("light_step");
                 if (js_ls.is_number()) light_step = js_ls.get<float>();
@@ -183,7 +183,6 @@ LuaEngine::LuaEngine(World& world) : world_(world)
 
                         if (factor >= 1.0)
                         {
-                            // ОСВЕТЛЕНИЕ: смешиваем с белым
                             double blend = std::min(factor - 1.0, 1.0);
                             r = r + static_cast<int>((255 - r) * blend);
                             g = g + static_cast<int>((255 - g) * blend);
@@ -191,7 +190,6 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                         }
                         else
                         {
-                            // ЗАТЕМНЕНИЕ: умножаем
                             r = static_cast<int>(r * factor);
                             g = static_cast<int>(g * factor);
                             b = static_cast<int>(b * factor);
@@ -216,7 +214,6 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                     std::string row;
                     for (int x = px - radius; x <= px + radius; ++x)
                     {
-                        // 1. Туман войны
                         bool visible = true;
                         if (world_.fog_enabled() && (x != px || y != py))
                         {
@@ -254,12 +251,10 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             continue;
                         }
 
-                    // 2. Игрок
                         if (x == px && y == py)
                         {
                             std::string bg = "000000";
                             bool found = false;
-                            // Проверяем уровень игрока (может быть в траве)
                             if (world_.has_overlay(x, y, pz))
                             {
                                 Tile ov = world_.get_overlay(x, y, pz);
@@ -280,7 +275,6 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             }
                             if (!found)
                             {
-                                // Игрок в воздухе — смотрим вниз
                                 for (int z = pz - 1; z >= pz - 10; --z)
                                 {
                                     bool b_found = false;
@@ -304,7 +298,6 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                                     }
                                     if (b_found)
                                     {
-                                        // ИСПРАВЛЕНО: затемняем, если пол ниже игрока
                                         int dist = (pz - 1) - z;
                                         if (dist > 0)
                                         {
@@ -319,11 +312,10 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             continue;
                         }
 
-                        // 3. Проверка: блокирует ли эта колонна движение игрока?
+                        // Проверка X (непроходимая стена на уровне игрока)
                         bool blocks_movement = false;
                         if (!world_.is_walkable(x, y, pz))
                         {
-                            // Стена на уровне игрока. Может ли он взобраться?
                             bool can_climb = false;
                             for (int step = 1; step <= max_step_up; ++step)
                             {
@@ -339,12 +331,17 @@ LuaEngine::LuaEngine(World& world) : world_(world)
 
                         if (blocks_movement)
                         {
-                            // Находим цвет стены
                             std::string wall_color = "808080";
                             if (world_.has_overlay(x, y, pz))
                             {
                                 Tile ov = world_.get_overlay(x, y, pz);
-                                if (!ov.symbol.empty()) wall_color = ov.color_hex;
+                                if (!ov.symbol.empty())
+                                    wall_color = ov.color_hex;
+                                else
+                                {
+                                    Tile tr = world_.get_terrain(x, y, pz);
+                                    if (!tr.symbol.empty()) wall_color = tr.color_hex;
+                                }
                             }
                             else
                             {
@@ -355,12 +352,22 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             continue;
                         }
 
-                        // 4. Находим верхний видимый блок
-                        int start_z = topdown ? (pz + ceiling_height) : pz;
-                        int end_z = pz - render_depth;
+                        // ИСПРАВЛЕНО: level рендерит ТОЛЬКО слой игрока
+                        int start_z, end_z;
+                        if (topdown)
+                        {
+                            start_z = pz + ceiling_height;
+                            end_z = pz - render_depth;
+                        }
+                        else
+                        {
+                            start_z = pz;
+                            end_z = pz; // ТОЛЬКО уровень игрока
+                        }
 
                         Tile top_tile;
                         int visible_z = -100;
+                        bool top_is_overlay = false;
                         for (int z = start_z; z >= end_z; --z)
                         {
                             if (world_.has_overlay(x, y, z))
@@ -370,6 +377,7 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                                 {
                                     visible_z = z;
                                     top_tile = ov;
+                                    top_is_overlay = true;
                                     break;
                                 }
                             }
@@ -378,59 +386,50 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             {
                                 visible_z = z;
                                 top_tile = tr;
+                                top_is_overlay = false;
                                 break;
                             }
                         }
 
-                    // 5. Отрисовка
                         if (visible_z != -100)
                         {
                             std::string fg = top_tile.color_hex;
                             std::string bg = "000000";
                             std::string sym = top_tile.symbol;
 
-                            if (!top_tile.bg_color_hex.empty())
+                            // ИСПРАВЛЕНО: для оверлеев фон берём с ТОГО ЖЕ слоя
+                            if (top_is_overlay)
+                            {
+                                Tile under_tr = world_.get_terrain(x, y, visible_z);
+                                if (!under_tr.symbol.empty()) bg = under_tr.color_hex;
+                            }
+                            else if (!top_tile.bg_color_hex.empty())
                             {
                                 bg = top_tile.bg_color_hex;
                             }
-                            else if (sym != " ")
-                            {
-                                for (int z = visible_z - 1; z >= end_z; --z)
-                                {
-                                    Tile under = world_.get_terrain(x, y, z);
-                                    if (!under.symbol.empty())
-                                    {
-                                        bg = under.color_hex;
-                                        break;
-                                    }
-                                }
-                            }
-                            else
+                            else if (sym == " ")
                             {
                                 bg = fg;
                             }
 
-                            // Освещение: для прозрачных оверлеев (цветов) не учитываем их высоту
-                            double factor;
-                            if (top_tile.transparent && sym != " ")
+                            int diff = visible_z - pz;
+                            double factor = std::pow(light_step, static_cast<double>(diff));
+
+                            // Для прозрачных оверлеев (цветов) не затемняем фон
+                            if (top_is_overlay && top_tile.transparent)
                             {
-                                // Цветок: фон = трава без осветления, символ осветляем
-                                factor = 1.0;
-                                fg = adjust_brightness(fg, std::pow(light_step, visible_z - pz));
+                                fg = adjust_brightness(fg, factor);
+                            }
+                            else if (sym == " ")
+                            {
+                                bg = adjust_brightness(bg, factor);
                             }
                             else
                             {
-                                factor = std::pow(light_step, static_cast<double>(visible_z - pz));
-                                if (sym == " ")
-                                    bg = adjust_brightness(bg, factor);
-                                else
-                                {
-                                    fg = adjust_brightness(fg, factor);
-                                    bg = adjust_brightness(bg, factor);
-                                }
+                                fg = adjust_brightness(fg, factor);
+                                bg = adjust_brightness(bg, factor);
                             }
 
-                            // Оптимизация: белое или чёрное — прекращаем
                             if (factor >= 2.0)
                             {
                                 row += "[cFFFFFF][bgFFFFFF] [/bg][/c]";
@@ -494,11 +493,6 @@ void LuaEngine::load_decorators(const std::string& biomes_dir)
             {
                 decorators_.push_back(result);
                 MCG_INFO("Loaded biome decorator: {}", entry.path().filename().string());
-            }
-            else
-            {
-                MCG_WARN("Biome file did not return a function: {}",
-                         entry.path().filename().string());
             }
         }
         catch (const sol::error& e)

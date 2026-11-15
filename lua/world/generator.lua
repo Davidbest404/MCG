@@ -13,16 +13,16 @@
                     terrain_height = 0
                 end
                 
-                -- Цвет травы зависит ТОЛЬКО от биома (не от высоты)
-                local grass_color = "00FF00"
+                -- Цвета травы по биомам
+                local grass_color = "3E753B"  -- ИСПРАВЛЕНО: тёмно-зелёный
                 if biome == "desert" then
                     grass_color = "EDC9AF"
                 elseif biome == "forest" then
-                    grass_color = "006400"
+                    grass_color = "2D5A2D"  -- Тёмнее для леса
                 end
                 
                 if is_spawn then
-                    grass_color = "00FF00"
+                    grass_color = "3E753B"
                 end
                 
                 for z = 0, 15 do
