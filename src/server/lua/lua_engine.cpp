@@ -128,7 +128,7 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                 int pz = p.attributes().get("pos_z").get<int>();
                 int radius = 8;
                 int render_depth = 10;
-                int ceiling_height = 4;
+                int ceiling_height = 20;
                 int max_step_up = 1;
 
                 auto js_depth = p.attributes().get("render_depth");
@@ -382,7 +382,7 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             }
                         }
 
-                        // 5. Отрисовка
+                    // 5. Отрисовка
                         if (visible_z != -100)
                         {
                             std::string fg = top_tile.color_hex;
@@ -410,20 +410,27 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                                 bg = fg;
                             }
 
-                            int diff = visible_z - pz;
-                            double factor = std::pow(light_step, static_cast<double>(diff));
-
-                            if (sym == " ")
+                            // Освещение: для прозрачных оверлеев (цветов) не учитываем их высоту
+                            double factor;
+                            if (top_tile.transparent && sym != " ")
                             {
-                                bg = adjust_brightness(bg, factor);
+                                // Цветок: фон = трава без осветления, символ осветляем
+                                factor = 1.0;
+                                fg = adjust_brightness(fg, std::pow(light_step, visible_z - pz));
                             }
                             else
                             {
-                                fg = adjust_brightness(fg, factor);
-                                bg = adjust_brightness(bg, factor);
+                                factor = std::pow(light_step, static_cast<double>(visible_z - pz));
+                                if (sym == " ")
+                                    bg = adjust_brightness(bg, factor);
+                                else
+                                {
+                                    fg = adjust_brightness(fg, factor);
+                                    bg = adjust_brightness(bg, factor);
+                                }
                             }
 
-                            // Оптимизация: если всё белое или чёрное — прерываем
+                            // Оптимизация: белое или чёрное — прекращаем
                             if (factor >= 2.0)
                             {
                                 row += "[cFFFFFF][bgFFFFFF] [/bg][/c]";

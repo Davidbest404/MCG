@@ -13,7 +13,7 @@ return function(cx, cy, cz)
             if not is_spawn and biome == "plains" and terrain_height < 5 and terrain_height > -1 then
                 local flower_noise = api.noise2d(gx * 0.3 + 1000, gy * 0.3 + 1000)
                 if flower_noise > 0.3 then
-                    api.set_overlay(gx, gy, terrain_height + 1, "*", "FFAA00", true)
+                    api.set_overlay(gx, gy, terrain_height, "*", "FFAA00", true)
                 end
             end
         end

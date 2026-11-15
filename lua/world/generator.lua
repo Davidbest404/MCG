@@ -13,16 +13,12 @@
                     terrain_height = 0
                 end
                 
-                -- Цвет травы зависит от биома
+                -- Цвет травы зависит ТОЛЬКО от биома (не от высоты)
                 local grass_color = "00FF00"
                 if biome == "desert" then
                     grass_color = "EDC9AF"
                 elseif biome == "forest" then
                     grass_color = "006400"
-                end
-                
-                if terrain_height > 8 then
-                    grass_color = "FFFFFF"
                 end
                 
                 if is_spawn then
