@@ -13,7 +13,8 @@ return function(cx, cy, cz)
             if not is_spawn and biome == "desert" and terrain_height < 5 and terrain_height > -1 then
                 local cactus_noise = api.noise2d(gx * 0.4 + 2000, gy * 0.4 + 2000)
                 if cactus_noise > 0.5 then
-                    api.set_overlay(gx, gy, terrain_height + 1, "|", "228B22", false)
+                    -- ÈÑÏĞÀÂËÅÍÎ: íà terrain_height (êàê öâåòû), transparent=true, walkable=false
+                    api.set_overlay(gx, gy, terrain_height, "|", "228B22", true, false)
                 end
             end
         end

@@ -79,18 +79,25 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                          world_.set_terrain(x, y, z, t);
                      });
 
-    // ИСПРАВЛЕНО: прозрачные объекты (цветы) автоматически проходимы
-    api.set_function(
-        "set_overlay",
-        [this](int x, int y, int z, std::string sym, std::string color, bool transparent)
-        {
-            Tile t;
-            t.symbol = sym;
-            t.color_hex = color;
-            t.walkable = transparent; // прозрачные = проходимые
-            t.transparent = transparent;
-            world_.set_overlay(x, y, z, t);
-        });
+    // ИСПРАВЛЕНО: параметр walkable стал опциональным (по умолчанию = transparent)
+    api.set_function("set_overlay",
+                     [this](int x, int y, int z, std::string sym, std::string color,
+                            bool transparent, sol::object walkable_obj)
+                     {
+                         Tile t;
+                         t.symbol = sym;
+                         t.color_hex = color;
+                         t.transparent = transparent;
+                         if (walkable_obj.valid() && walkable_obj.is<bool>())
+                         {
+                             t.walkable = walkable_obj.as<bool>();
+                         }
+                         else
+                         {
+                             t.walkable = transparent; // прозрачные = проходимые
+                         }
+                         world_.set_overlay(x, y, z, t);
+                     });
 
     world_.set_generator_callback([this](int cx, int cy, int cz)
                                   { this->on_generate_chunk(cx, cy, cz); });
@@ -312,9 +319,10 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             continue;
                         }
 
-                        // Проверка X (непроходимая стена на уровне игрока)
+                    // Проверка X (только в Level режиме и только для terrain)
                         bool blocks_movement = false;
-                        if (!world_.is_walkable(x, y, pz))
+                        if (!topdown && !world_.has_overlay(x, y, pz) &&
+                            !world_.is_walkable(x, y, pz))
                         {
                             bool can_climb = false;
                             for (int step = 1; step <= max_step_up; ++step)
@@ -332,22 +340,8 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                         if (blocks_movement)
                         {
                             std::string wall_color = "808080";
-                            if (world_.has_overlay(x, y, pz))
-                            {
-                                Tile ov = world_.get_overlay(x, y, pz);
-                                if (!ov.symbol.empty())
-                                    wall_color = ov.color_hex;
-                                else
-                                {
-                                    Tile tr = world_.get_terrain(x, y, pz);
-                                    if (!tr.symbol.empty()) wall_color = tr.color_hex;
-                                }
-                            }
-                            else
-                            {
-                                Tile tr = world_.get_terrain(x, y, pz);
-                                if (!tr.symbol.empty()) wall_color = tr.color_hex;
-                            }
+                            Tile tr = world_.get_terrain(x, y, pz);
+                            if (!tr.symbol.empty()) wall_color = tr.color_hex;
                             row += "[cFF0000][bg" + wall_color + "]X[/bg][/c]";
                             continue;
                         }
@@ -391,17 +385,24 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             }
                         }
 
-                        if (visible_z != -100)
+                    if (visible_z != -100)
                         {
                             std::string fg = top_tile.color_hex;
                             std::string bg = "000000";
                             std::string sym = top_tile.symbol;
 
-                            // ИСПРАВЛЕНО: для оверлеев фон берём с ТОГО ЖЕ слоя
+                            // ИСПРАВЛЕНО: для оверлеев фон берём с ближайшего terrain вниз
                             if (top_is_overlay)
                             {
-                                Tile under_tr = world_.get_terrain(x, y, visible_z);
-                                if (!under_tr.symbol.empty()) bg = under_tr.color_hex;
+                                for (int bz = visible_z; bz >= end_z; --bz)
+                                {
+                                    Tile under_tr = world_.get_terrain(x, y, bz);
+                                    if (!under_tr.symbol.empty())
+                                    {
+                                        bg = under_tr.color_hex;
+                                        break;
+                                    }
+                                }
                             }
                             else if (!top_tile.bg_color_hex.empty())
                             {
@@ -415,7 +416,6 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             int diff = visible_z - pz;
                             double factor = std::pow(light_step, static_cast<double>(diff));
 
-                            // Для прозрачных оверлеев (цветов) не затемняем фон
                             if (top_is_overlay && top_tile.transparent)
                             {
                                 fg = adjust_brightness(fg, factor);
