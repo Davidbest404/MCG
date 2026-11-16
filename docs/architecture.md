@@ -1,108 +1,73 @@
-# MCG — Архитектура
+# MCG Architecture
 
-Этот документ — источник истины для принятых архитектурных решений.
-Правила: любое изменение архитектуры вносится сюда ДО того, как попасть в код.
+## 1. Core Principles
+- **Zero-Core:** C++ provides only primitives (networking, memory, Lua VM). Game logic is Lua.
+- **Server Authoritative:** Server validates everything. Client only renders what it receives.
+- **Thin Client, Fat Server:** Server does FOV and data filtering. Client does rendering, lighting, colors.
 
-## 1. Обзор
+## 2. Threading
+### Server
+- **LogicThread:** Lua, world updates, command processing.
+- **NetworkThread:** asio IO.
+- **PersistenceThread:** (planned) JSON saves.
 
-MCG (Multi Console Game) — кроссплатформенный MUD-движок с мощной
-расширяемостью через Lua. Сервер авторитетен (все проверки и Lua-логика
-на сервере), клиент тонкий (отправляет команды, отображает состояние).
+### Client
+- **MainThread:** Input, network callbacks, render loop.
+- **NetworkThread:** Non-blocking sockets.
 
-## 2. Ключевые принципы
+## 3. Networking Protocol
+Frames: `[u32 size][u16 type][JSON]`. See `protocol.md`.
 
-- **Нулевое ядро.** В C++ нет ни одной игровой команды или атрибута.
-  Всё, что происходит «в игре», — это Lua-скрипты в `lua/actions/`.
-  Ядро предоставляет только: сеть, реестр команд, реестр атрибутов,
-  Lua API, мир и его чанки.
-- **Сервер авторитетен.** Клиент не влияет на состояние мира, только шлёт
-  запросы. Сервер решает, что произошло.
-- **Данные — JSON.** Сохранения, конфиги, настройки — всё JSON,
-  документированный в `docs/save_format.md` для контент-мейкеров.
-- **OOP для оркестрации, DOD для горячих циклов.**
-  Классы владеют жизненным циклом; массовые операции над игроками
-  и рендером — SoA-массивами.
+## 4. World & Coordinates
+- 3D coordinate system (X, Y, Z).
+- Chunks: `16x16x16`.
+- Two layers per block: `terrain` (base) and `overlay` (objects).
 
-## 3. Протокол
+## 5. FOV & Anti-Cheat
+The server is the sole authority on visibility:
+1. On `update_fov`, server casts rays from player position.
+2. Only visible cells are included in the response.
+3. Hidden cells (behind walls, beyond radius, or deep in fog) are **never sent**.
+4. The client literally does not have the data to draw them.
 
-Length-prefixed frame + JSON payload.
-[u32 frame_size][u16 msg_type][JSON payload]
+Therefore:
+- Modifying the client cannot reveal hidden content.
+- Wallhacks, x-ray, and "see-through-fog" are impossible by design.
 
+## 6. Lighting
+The server does **not** calculate lighting. It only sends base colors (`fg`, `bg`).
+The client computes brightness based on `light_step` (received from server config):
+- Up: `color = mix(color, WHITE, (light_step^1 - 1) * distance)`.
+- Down: `color = color * (1 / light_step)^distance`.
 
-- `frame_size` — размер ВСЕГО пакета (включая эти 4 байта).
-- `msg_type` — число, определяет, как парсить JSON.
-- `payload` — сериализованный объект.
+## 7. Rendering — Multi-Axis Slicing
+The client requests a "slice" of the world along a chosen axis:
+- **`xy`** (Top-Down): view from above (Minecraft, Mindustry).
+- **`xz`** (Side-View): view from the side (Terraria).
+- **`yz`** (Front-View): view from the front (Space sims).
 
-Причина: простота, отладка (можно смотреть в tcpdump), один сериализатор
-и для сети, и для сейвов. Для «горячих» сообщений (обновления карты)
-позже можно ввести отдельные бинарные типы, не ломая протокол.
+Player's position + view axis + render distance = request sent to server.
+Server returns a 2D grid of tiles (visible only) for that slice.
 
-## 4. Потоки
+## 8. Server Config Sync
+The client receives `RenderConfig` from the server:
+1. On connect.
+2. On every Lua reload (`/lua reload`).
+3. When admin changes server settings.
 
-### Сервер
-- **LogicThread** — изменение мира, исполнение Lua, обработка команд.
-- **NetworkIOThread** — asio io_context: accept/read/write.
-- **PersistenceThread** — периодические снапшоты в JSON.
+This config includes:
+- `light_step`, `ceiling_height`, `render_depth`
+- `render_mode` (topdown, level, or axis)
+- `max_render_distance`
+- Biome color palette
 
-Связь между потоками — lock-free очереди (SPSC/MPSC). Мьютексы в горячем
-пути запрещены.
+Client **cannot** override this (for fairness). It may only adjust cosmetic things like font or terminal size.
 
-### Клиент
-- **MainThread** — ввод, glue-логика, рендер.
-- **NetworkThread** — приём/отправка пакетов.
+## 9. Client Rendering Pipeline
+1. Server sends `WorldRender` with visible tiles.
+2. Client stores tiles in a `TileGrid`.
+3. Client applies lighting (`light_step`).
+4. Client converts to ANSI TrueColor and prints.
+5. On player move, server sends update; client re-renders.
 
-## 5. Система координат
-
-Настраивается на уровне мира (серверный конфиг).
-
-- **Integer mode.** Позиции — `int32_t`. Движение по диагонали запрещено
-  (по умолчанию; можно разрешить флагом). Расстояние — манхэттенское
-  (`|dx| + |dy| + |dz|`).
-- **Rational mode.** Позиции — fixed-point `int32_t` со сдвигом ×100
-  (2 знака после запятой). Диагональ разрешена. Расстояние — евклидово
-  (`sqrt(dx² + dy² + dz²)`).
-
-Тип вектора будет шаблонным (`Vec2<T>`), логика расстояния — через
-`distance_policy` выбранной политики.
-
-## 6. Формат Lua-команды
-
-Каждый скрипт в `lua/actions/commands/` возвращает таблицу:
-
-```lua
-return {
-    name = "heal",
-    description = "Heals target",
-    args = "<target> [amount]",
-    category = "combat",
-    admin_only = false,
-    on_command = function(ctx, args) -- ... end
-}
-
-### 12.5. Планеты (две стратегии)
-
-Контент-мейкер выбирает:
-
-**A. Единая сущность.** Планета — Entity с `layer = celestial`, большим
-`size`, атрибутом `resources`. При добыче Lua уменьшает `size` и
-`resources`. Дёшево для сервера, работает в первой версии.
-
-**B. Сцена.** Планета — отдельный регион (Scene) с чанками. Игрок
-«высаживается»: `api.enter_scene(entity, planet_id, landing_pos)`.
-Дороже, требует механизма сцен (Phase 13).
-
-### 12.6. Карточки чата
-
-Сообщение с `form = "card"` содержит `card = { art, name, text }`.
-ASCII-рамка вокруг карточки — **клиентская настройка** (в
-`assets/configs/client.json` у каждого игрока своя). Сервер не
-знает о рамке, только передаёт содержимое.
-
-### 12.7. Параметры мира из конфига и админ-команд
-
-- `max_render_distance` — в `server.json`, меняется админом:
-  `/world render_distance <N>`.
-- `coordinate_mode` — в `server.json`, требует рестарта мира.
-- `defaults.requires_active_player` — в `server.json`, дефолт `true`,
-  каждый Lua-скрипт может переопределить.
-- `pow_difficulty` — в `server.json`, дефолт `4`.
+The client is a pure visualization layer. It has no world state of its own.
