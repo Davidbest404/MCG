@@ -30,21 +30,40 @@ void Server::run()
             auto it = sessions_.find(player_id);
             if (it != sessions_.end())
             {
-                // ИСПРАВЛЕНО: шлём WorldRender, а не WorldSnapshot
                 network_->send(it->second, mcg::protocol::MessageType::WorldRender, payload);
             }
         });
 
-    // 1. Общие функции генерации (get_height, get_biome)
-    lua_->run_script("lua/world/common.lua");
+    lua_->set_entity_callback(
+        [this](int x, int y, int z) -> std::tuple<std::string, std::string>
+        {
+            for (auto& [id, p] : players_)
+            {
+                if (p->attributes().get("pos_x").get<int>() == x &&
+                    p->attributes().get("pos_y").get<int>() == y &&
+                    p->attributes().get("pos_z").get<int>() == z)
+                {
+                    std::string sym = "@";
+                    std::string col = "FFD700";
+                    auto js_sym = p->attributes().get("symbol");
+                    if (js_sym.is_string()) sym = js_sym.get<std::string>();
+                    auto js_col = p->attributes().get("color");
+                    if (js_col.is_string()) col = js_col.get<std::string>();
+                    return {sym, col};
+                }
+            }
+            return {"", ""};
+        });
 
+    // 1. Общие функции генерации
+    lua_->run_script("lua/world/common.lua");
     // 2. Базовый ландшафт
     lua_->run_script("lua/world/generator.lua");
-
-    // 3. Биомы (деревья, цветы, кактусы)
+    // 3. Биомы
     lua_->load_decorators("lua/world/biomes");
-
-    // 4. Команды игроков (/map, /move, /fly, /flower, /stats)
+    // 4. Расы
+    lua_->load_races("lua/races");
+    // 5. Команды
     lua_->load_commands("lua/actions/commands");
 
     try
@@ -59,9 +78,7 @@ void Server::run()
             network_ = std::make_unique<NetworkThread>(0);
         }
         else
-        {
             throw;
-        }
     }
     catch (const std::exception& e)
     {
@@ -71,9 +88,7 @@ void Server::run()
             network_ = std::make_unique<NetworkThread>(0);
         }
         else
-        {
             throw;
-        }
     }
 
     MCG_INFO("Server is listening on port {}", network_->port());
@@ -104,12 +119,30 @@ void Server::handle_ping(std::shared_ptr<Session> session, const nlohmann::json&
 
     if (players_.find(player_id) == players_.end())
     {
-        // Найди handle_ping и замени установку Z:
         auto player = std::make_shared<Player>(player_id);
         player->attributes().set("pos_z", world_.get_surface_z(0, 0));
 
         players_[player_id] = player;
         sessions_[player_id] = session;
+
+        // Выдаём базовую расу
+        auto base_it = lua_->races().find("base");
+        if (base_it != lua_->races().end())
+        {
+            for (auto& [k, v] : base_it->second.items())
+            {
+                if (v.is_string())
+                    player->attributes().set(k, v.get<std::string>());
+                else if (v.is_number_integer())
+                    player->attributes().set(k, v.get<int64_t>());
+                else if (v.is_number_float())
+                    player->attributes().set(k, v.get<double>());
+                else if (v.is_boolean())
+                    player->attributes().set(k, v.get<bool>());
+            }
+            player->attributes().set("race", "base");
+        }
+
         lua_->on_player_connect(player);
         broadcast("Player " + player->attributes().get("name").get<std::string>() + " joined");
     }
@@ -126,7 +159,6 @@ void Server::handle_client_message(std::shared_ptr<Session> session, const nlohm
     std::string text = payload.value("text", "");
     if (text.empty()) return;
 
-    // ДОБАВЛЕНО: отладочный лог
     MCG_INFO("Received text from player {}: '{}'", player_id, text);
 
     if (text[0] == '/')
@@ -170,7 +202,7 @@ void Server::handle_command(std::shared_ptr<Session> session, const std::string&
     LuaCommand* cmd = lua_->find_command(cmd_name);
     if (!cmd)
     {
-        MCG_WARN("Command not found: {}", cmd_name); // ДОБАВЛЕНО
+        MCG_WARN("Command not found: {}", cmd_name);
         return;
     }
 
@@ -182,7 +214,7 @@ void Server::handle_command(std::shared_ptr<Session> session, const std::string&
     auto& player = players_[session->id()];
     if (cmd->on_command.valid())
     {
-        MCG_INFO("Executing Lua command /{}", cmd_name); // ДОБАВЛЕНО
+        MCG_INFO("Executing Lua command /{}", cmd_name);
         auto result = cmd->on_command(player.get(), args);
         if (!result.valid())
         {

@@ -20,13 +20,27 @@ public:
         attributes_.set("pos_x", 0);
         attributes_.set("pos_y", 0);
         attributes_.set("pos_z", 0);
-        attributes_.set("max_step_up", 1);
+
+        attributes_.set("symbol", "@");
+        attributes_.set("color", "FFD700");
+
+        attributes_.set("sun_color", "FFF8DC");
+        attributes_.set("dark_color", "000000");
+        attributes_.set("sky_low_color", "200040");
+        attributes_.set("sky_mid_color", "87CEEB");
+        attributes_.set("sky_high_color", "FFFFFF");
+        attributes_.set("sun_strength", 0.5);
+
+        // НОВОЕ: Способности рас
+        attributes_.set("xray", false);
+        attributes_.set("monochrome", false);
+        attributes_.set("no_fog", false);
+        attributes_.set("plant_occlusion", 1.0);
     }
 
     uint64_t id() const { return id_; }
     AttributeMap& attributes() { return attributes_; }
 
-    // Время в секундах с момента подключения
     int64_t uptime_seconds() const
     {
         auto now = std::chrono::steady_clock::now();

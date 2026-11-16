@@ -36,9 +36,11 @@ public:
     void on_player_connect(std::shared_ptr<Player> player);
     void on_generate_chunk(int cx, int cy, int cz);
     void load_commands(const std::string& commands_dir);
-    void load_decorators(const std::string& biomes_dir); // мнбне
+    void load_decorators(const std::string& biomes_dir);
+    void load_races(const std::string& races_dir); // мнбне
     LuaCommand* find_command(const std::string& name);
     const std::unordered_map<std::string, LuaCommand>& commands() const { return commands_; }
+    const std::unordered_map<std::string, nlohmann::json>& races() const { return races_; } // мнбне
 
     using BroadcastCallback = std::function<void(const std::string& text)>;
     void set_broadcast_callback(BroadcastCallback cb) { broadcast_cb_ = std::move(cb); }
@@ -47,13 +49,18 @@ public:
         std::function<void(uint64_t player_id, const nlohmann::json& payload)>;
     void set_map_update_callback(MapUpdateCallback cb) { map_update_cb_ = std::move(cb); }
 
+    using EntityCallback = std::function<std::tuple<std::string, std::string>(int, int, int)>;
+    void set_entity_callback(EntityCallback cb) { entity_cb_ = std::move(cb); }
+
 private:
     sol::state lua_;
     World& world_;
     std::unordered_map<std::string, LuaCommand> commands_;
-    std::vector<sol::protected_function> decorators_; // мнбне
+    std::unordered_map<std::string, nlohmann::json> races_; // мнбне
+    std::vector<sol::protected_function> decorators_;
     BroadcastCallback broadcast_cb_;
     MapUpdateCallback map_update_cb_;
+    EntityCallback entity_cb_;
 };
 
 } // namespace mcg::server

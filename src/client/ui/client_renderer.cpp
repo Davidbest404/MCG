@@ -1,4 +1,4 @@
-#include "client/ui/client_renderer.h"
+пїњ#include "client/ui/client_renderer.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -38,67 +38,49 @@ static std::string lerp_color(const std::string& a, const std::string& b, double
                       static_cast<int>(ab * (1.0 - t) + bb * t));
 }
 
-// ÷вет солнца (высокие блоки светлеют к нему)
-static const std::string SUN_COLOR = "FFF8DC";
+static std::string to_monochrome(const std::string& hex)
+{
+    if (hex.length() != 6) return hex;
+    int r = hex_to_int(hex, 0), g = hex_to_int(hex, 2), b = hex_to_int(hex, 4);
+    int gray = static_cast<int>(0.299 * r + 0.587 * g + 0.114 * b);
+    return rgb_to_hex(gray, gray, gray);
+}
 
-// ќсвещение: знаковое (положительное = выше = светлее, отрицательное = ниже = темнее)
-static std::string adjust_light(const std::string& hex, double factor)
+static std::string adjust_light(const std::string& hex, double factor, const std::string& sun,
+                                const std::string& dark, float sun_strength)
 {
     if (hex.length() != 6) return hex;
     int r = hex_to_int(hex, 0), g = hex_to_int(hex, 2), b = hex_to_int(hex, 4);
 
     if (factor >= 1.0)
     {
-        double blend = std::min(factor - 1.0, 1.0);
-        int tr = hex_to_int(SUN_COLOR, 0), tg = hex_to_int(SUN_COLOR, 2),
-            tb = hex_to_int(SUN_COLOR, 4);
-        r = r + static_cast<int>((tr - r) * blend);
-        g = g + static_cast<int>((tg - g) * blend);
-        b = b + static_cast<int>((tb - b) * blend);
+        double t = std::min((factor - 1.0) * sun_strength, 0.95);
+        int tr = hex_to_int(sun, 0), tg = hex_to_int(sun, 2), tb = hex_to_int(sun, 4);
+        r = r + static_cast<int>((tr - r) * t);
+        g = g + static_cast<int>((tg - g) * t);
+        b = b + static_cast<int>((tb - b) * t);
     }
     else
     {
-        r = static_cast<int>(r * factor);
-        g = static_cast<int>(g * factor);
-        b = static_cast<int>(b * factor);
+        double t = 1.0 - factor;
+        int dr = hex_to_int(dark, 0), dg = hex_to_int(dark, 2), db = hex_to_int(dark, 4);
+        r = r + static_cast<int>((dr - r) * t);
+        g = g + static_cast<int>((dg - g) * t);
+        b = b + static_cast<int>((db - b) * t);
     }
     return rgb_to_hex(r, g, b);
 }
 
-// √радиент неба по Z: глубоко под землЄй = тЄмно-фиолетовый, на поверхности = голубой, высоко =
-// белый
-static std::string sky_color(int z)
-{
-    if (z < -30) return "200040";
-    if (z > 40) return "FFFFFF";
-
-    if (z < 0)
-    {
-        double t = (z + 30) / 30.0;
-        return rgb_to_hex(static_cast<int>(32 + t * (135 - 32)),
-                          static_cast<int>(0 + t * (206 - 0)),
-                          static_cast<int>(64 + t * (235 - 64)));
-    }
-    else
-    {
-        double t = z / 40.0;
-        return rgb_to_hex(static_cast<int>(135 + t * (255 - 135)),
-                          static_cast<int>(206 + t * (255 - 206)),
-                          static_cast<int>(235 + t * (255 - 235)));
-    }
-}
-
 std::string ClientRenderer::render_map(const nlohmann::json& data, float light_step)
 {
-    if (!data.contains("w") || !data.contains("h") || !data.contains("g"))
-    {
-        return "Error: Invalid map data\n";
-    }
+    if (!data.contains("w") || !data.contains("h") || !data.contains("g")) return "Error\n";
 
     int w = data["w"].get<int>();
     int h = data["h"].get<int>();
     std::string axis = data.value("a", "xy");
     std::string mode = data.value("m", "topdown");
+    bool monochrome = data.value("monochrome", false);
+    bool no_fog = data.value("no_fog", false);
 
     int px = 0, py = 0, pz = 0;
     if (data.contains("c") && data["c"].is_array() && data["c"].size() >= 3)
@@ -107,6 +89,27 @@ std::string ClientRenderer::render_map(const nlohmann::json& data, float light_s
         py = data["c"][1].get<int>();
         pz = data["c"][2].get<int>();
     }
+
+    std::string sun_color = data.value("sun", "FFF8DC");
+    std::string dark_color = data.value("dark", "000000");
+    std::string sky_low = data.value("sky_low", "200040");
+    std::string sky_mid = data.value("sky_mid", "87CEEB");
+    std::string sky_high = data.value("sky_high", "FFFFFF");
+    float sun_strength = data.value("sun_strength", 0.5f);
+
+    auto get_sky_color = [&](int z)
+    {
+        if (z < 0)
+        {
+            double t = std::clamp((z + 30) / 30.0, 0.0, 1.0);
+            return lerp_color(sky_low, sky_mid, t);
+        }
+        else
+        {
+            double t = std::clamp(z / 40.0, 0.0, 1.0);
+            return lerp_color(sky_mid, sky_high, t);
+        }
+    };
 
     auto grid = data["g"].get<std::vector<nlohmann::json>>();
     int radius = w / 2;
@@ -121,16 +124,17 @@ std::string ClientRenderer::render_map(const nlohmann::json& data, float light_s
             size_t idx = v * w + u;
             if (idx >= grid.size())
             {
-                out += "[bg000000] [/bg]";
+                out += " ";
                 continue;
             }
 
             const auto& cell = grid[idx];
             if (cell.is_null())
             {
-                // “уман / небо
-                int row_z = (axis == "xy") ? 0 : (pz + radius - v);
-                out += "[bg" + sky_color(row_z) + "] [/bg]";
+                int row_z = (axis == "xy") ? pz : (pz + radius - v);
+                std::string sky = get_sky_color(row_z);
+                if (monochrome) sky = to_monochrome(sky);
+                out += "[bg" + sky + "] [/bg]";
                 continue;
             }
 
@@ -140,33 +144,42 @@ std::string ClientRenderer::render_map(const nlohmann::json& data, float light_s
             int d = cell.value("d", 0);
             int r = cell.value("r", 0);
             int z = cell.value("z", pz);
+            bool is_player = cell.value("is_player", false);
 
-            // —пециальна€ обработка игрока
-            if (s == "@")
+            if (monochrome)
             {
-                if (axis != "xy")
-                {
-                    // ¬ид сбоку: фон = небо на уровне Z игрока
-                    b = sky_color(z);
-                }
-                // »грок всегда €рко-золотой, не затемн€етс€
-                f = "FFD700";
-                out += "[c" + f + "][bg" + b + "]@[/bg][/c]";
+                f = to_monochrome(f);
+                b = to_monochrome(b);
+            }
+
+            if (is_player)
+            {
+                double factor_bg =
+                    std::pow(static_cast<double>(light_step), static_cast<double>(d));
+                std::string bg_lit =
+                    adjust_light(b, factor_bg, sun_color, dark_color, sun_strength);
+                if (monochrome) bg_lit = to_monochrome(bg_lit);
+                out += "[c" + f + "][bg" + bg_lit + "]" + s + "[/bg][/c]";
                 continue;
             }
 
-            // ќбычна€ €чейка: сначала туман, потом свет
-            if (mode == "mixed")
+            if (mode == "mixed" && !no_fog)
             {
                 double fog_t = std::min(static_cast<double>(r) / 15.0, 1.0);
-                std::string sky = sky_color(z);
+                std::string sky = get_sky_color(z);
+                if (monochrome) sky = to_monochrome(sky);
                 f = lerp_color(f, sky, fog_t);
                 b = lerp_color(b, sky, fog_t);
             }
 
             double factor = std::pow(static_cast<double>(light_step), static_cast<double>(d));
-            f = adjust_light(f, factor);
-            b = adjust_light(b, factor);
+            f = adjust_light(f, factor, sun_color, dark_color, sun_strength);
+            b = adjust_light(b, factor, sun_color, dark_color, sun_strength);
+            if (monochrome)
+            {
+                f = to_monochrome(f);
+                b = to_monochrome(b);
+            }
 
             if (s == " ")
             {
@@ -181,5 +194,4 @@ std::string ClientRenderer::render_map(const nlohmann::json& data, float light_s
     }
     return out;
 }
-
 } // namespace mcg::client
