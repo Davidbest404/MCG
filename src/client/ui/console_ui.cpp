@@ -98,6 +98,9 @@ void ConsoleUI::draw(const std::string& map_grid, const std::vector<std::string>
     std::string buffer;
     buffer.reserve(8192);
 
+    // ИСПРАВЛЕНО: полная очистка экрана каждый кадр (убирает шлейфы)
+    buffer += "\033[H\033[J";
+
     // 1. Рисуем карту (первые 15 строк)
     buffer += "\033[1;1H"; // Курсор в левый верхний угол
     std::istringstream ss(map_grid);

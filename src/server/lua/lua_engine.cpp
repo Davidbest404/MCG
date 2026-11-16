@@ -200,14 +200,40 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                             for (int z = start_z; (step_z < 0 ? z >= end_z : z <= end_z);
                                  z += step_z)
                             {
-                                // ИГРОК - ПРОВЕРЯЕМ ПЕРВЫМ ДЕЛОМ (до блокировок)
+                                // ИГРОК - ПРОВЕРЯЕМ ПЕРВЫМ ДЕЛОМ
                                 if (gx == px && gy == py && z == pz)
                                 {
-                                    Tile tr = world_.get_terrain(gx, gy, z);
-                                    terrain_bg = tr.symbol.empty() ? "000000" : tr.color_hex;
+                                    // ИСПРАВЛЕНО: ищем пол под игроком (может быть глубже)
+                                    int floor_z = pz - 1;
+                                    std::string floor_color = "000000";
+                                    while (floor_z > pz - 20)
+                                    {
+                                        bool f = false;
+                                        if (world_.has_overlay(gx, gy, floor_z))
+                                        {
+                                            Tile ov = world_.get_overlay(gx, gy, floor_z);
+                                            if (!ov.symbol.empty())
+                                            {
+                                                floor_color = ov.color_hex;
+                                                f = true;
+                                            }
+                                        }
+                                        if (!f)
+                                        {
+                                            Tile tr = world_.get_terrain(gx, gy, floor_z);
+                                            if (!tr.symbol.empty())
+                                            {
+                                                floor_color = tr.color_hex;
+                                                f = true;
+                                            }
+                                        }
+                                        if (f) break;
+                                        floor_z--;
+                                    }
+                                    terrain_bg = floor_color;
                                     best_sym = "@";
-                                    best_fg = "FFD700"; // ИСПРАВЛЕНО: цвет игрока задан!
-                                    best_z = pz;
+                                    best_fg = "FFD700";
+                                    best_z = floor_z; // знаковое d = floor_z - pz (negative)
                                     found_something = true;
                                     break;
                                 }

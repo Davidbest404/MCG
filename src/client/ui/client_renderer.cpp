@@ -137,11 +137,25 @@ std::string ClientRenderer::render_map(const nlohmann::json& data, float light_s
             std::string s = cell.value("s", " ");
             std::string f = cell.value("f", "FFFFFF");
             std::string b = cell.value("b", "000000");
-            int d = cell.value("d", 0);  // «наковое: z - pz
-            int r = cell.value("r", 0);  // –ассто€ние луча (дл€ тумана)
-            int z = cell.value("z", pz); // јбсолютный Z (дл€ градиента неба)
+            int d = cell.value("d", 0);
+            int r = cell.value("r", 0);
+            int z = cell.value("z", pz);
 
-            // 1. —Ќј„јЋј туман Ч смешиваем с небом своего Z-уровн€
+            // —пециальна€ обработка игрока
+            if (s == "@")
+            {
+                if (axis != "xy")
+                {
+                    // ¬ид сбоку: фон = небо на уровне Z игрока
+                    b = sky_color(z);
+                }
+                // »грок всегда €рко-золотой, не затемн€етс€
+                f = "FFD700";
+                out += "[c" + f + "][bg" + b + "]@[/bg][/c]";
+                continue;
+            }
+
+            // ќбычна€ €чейка: сначала туман, потом свет
             if (mode == "mixed")
             {
                 double fog_t = std::min(static_cast<double>(r) / 15.0, 1.0);
@@ -150,7 +164,6 @@ std::string ClientRenderer::render_map(const nlohmann::json& data, float light_s
                 b = lerp_color(b, sky, fog_t);
             }
 
-            // 2. ѕќ“ќћ свет Ч смешиваем с солнцем по высоте
             double factor = std::pow(static_cast<double>(light_step), static_cast<double>(d));
             f = adjust_light(f, factor);
             b = adjust_light(b, factor);
