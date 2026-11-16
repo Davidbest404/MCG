@@ -1,36 +1,30 @@
 #pragma once
-
 #include <cstdint>
 
 namespace mcg::protocol
 {
-
 enum class MessageType : uint16_t
 {
     Unknown = 0,
-
-    // Соединение
     Ping = 1,
     Pong = 2,
-
-    // Авторизация
     AuthRequest = 10,
     AuthChallenge = 11,
     AuthResponse = 12,
     AuthResult = 13,
-
-    // Игровые
     ChatMessage = 20,
     Command = 21,
     CommandResult = 22,
-
-    // Сущности и мир
     EntityUpdate = 30,
     EntityRemove = 31,
-    WorldSnapshot = 40,
+    WorldSnapshot = 40, // Старый формат (строки)
     ChunkData = 41,
 
-    // Ошибки
+    // НОВЫЕ СООБЩЕНИЯ ДЛЯ РЕНДЕРА
+    RenderConfig = 50,
+    RenderRequest = 51,
+    WorldRender = 52,
+
     Error = 100,
 };
 
@@ -66,11 +60,16 @@ inline const char* to_string(MessageType t)
         return "WorldSnapshot";
     case MessageType::ChunkData:
         return "ChunkData";
+    case MessageType::RenderConfig:
+        return "RenderConfig";
+    case MessageType::RenderRequest:
+        return "RenderRequest";
+    case MessageType::WorldRender:
+        return "WorldRender";
     case MessageType::Error:
         return "Error";
     default:
         return "??";
     }
 }
-
 } // namespace mcg::protocol

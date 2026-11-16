@@ -125,7 +125,7 @@ LuaEngine::LuaEngine(World& world) : world_(world)
         });
 
     api.set_function(
-        "update_fov",
+        "update_render",
         [this](Player& p)
         {
             try
@@ -133,341 +133,255 @@ LuaEngine::LuaEngine(World& world) : world_(world)
                 int px = p.attributes().get("pos_x").get<int>();
                 int py = p.attributes().get("pos_y").get<int>();
                 int pz = p.attributes().get("pos_z").get<int>();
+
                 int radius = 8;
                 int render_depth = 10;
-                int max_step_up = 1;
+                int ceiling_height = 20;
 
                 auto js_depth = p.attributes().get("render_depth");
                 if (js_depth.is_number_integer()) render_depth = js_depth.get<int>();
-
-                // ИСПРАВЛЕНО: ceiling_height редактируется (дефолт 20 для topdown)
-                int ceiling_height = 20;
                 auto js_ceil = p.attributes().get("ceiling_height");
                 if (js_ceil.is_number_integer()) ceiling_height = js_ceil.get<int>();
 
-                auto js_step = p.attributes().get("max_step_up");
-                if (js_step.is_number_integer()) max_step_up = js_step.get<int>();
-
-                float light_step = 1.25f;
-                auto js_ls = p.attributes().get("light_step");
-                if (js_ls.is_number()) light_step = js_ls.get<float>();
-
-                std::string render_mode = "auto";
+                std::string render_mode = "topdown";
                 auto js_mode = p.attributes().get("render_mode");
                 if (js_mode.is_string()) render_mode = js_mode.get<std::string>();
 
-                bool topdown = false;
-                if (render_mode == "topdown")
-                {
-                    topdown = true;
-                }
-                else if (render_mode == "level")
-                {
-                    topdown = false;
-                }
-                else
-                {
-                    bool has_ceiling = false;
-                    for (int z = pz + 1; z <= pz + 5; ++z)
-                    {
-                        if (!world_.is_transparent(px, py, z))
-                        {
-                            has_ceiling = true;
-                            break;
-                        }
-                    }
-                    topdown = !has_ceiling;
-                }
+                std::string axis = "xy";
+                auto js_axis = p.attributes().get("view_axis");
+                if (js_axis.is_string()) axis = js_axis.get<std::string>();
 
-                auto adjust_brightness = [](const std::string& hex, double factor) -> std::string
-                {
-                    if (hex.length() != 6) return hex;
-                    try
-                    {
-                        int r = std::stoi(hex.substr(0, 2), nullptr, 16);
-                        int g = std::stoi(hex.substr(2, 2), nullptr, 16);
-                        int b = std::stoi(hex.substr(4, 2), nullptr, 16);
+                std::string dir = "t";
+                auto js_dir = p.attributes().get("view_dir");
+                if (js_dir.is_string()) dir = js_dir.get<std::string>();
 
-                        if (factor >= 1.0)
-                        {
-                            double blend = std::min(factor - 1.0, 1.0);
-                            r = r + static_cast<int>((255 - r) * blend);
-                            g = g + static_cast<int>((255 - g) * blend);
-                            b = b + static_cast<int>((255 - b) * blend);
-                        }
-                        else
-                        {
-                            r = static_cast<int>(r * factor);
-                            g = static_cast<int>(g * factor);
-                            b = static_cast<int>(b * factor);
-                        }
-
-                        r = std::max(0, std::min(255, r));
-                        g = std::max(0, std::min(255, g));
-                        b = std::max(0, std::min(255, b));
-                        char buf[8];
-                        snprintf(buf, sizeof(buf), "%02X%02X%02X", r, g, b);
-                        return std::string(buf);
-                    }
-                    catch (...)
-                    {
-                        return hex;
-                    }
-                };
-
+                int w = radius * 2 + 1;
+                int h = radius * 2 + 1;
                 nlohmann::json grid = nlohmann::json::array();
-                for (int y = py - radius; y <= py + radius; ++y)
+
+                for (int v = -radius; v <= radius; ++v)
                 {
-                    std::string row;
-                    for (int x = px - radius; x <= px + radius; ++x)
+                    for (int u = -radius; u <= radius; ++u)
                     {
-                        bool visible = true;
-                        if (world_.fog_enabled() && (x != px || y != py))
+                        nlohmann::json best_cell = nullptr;
+
+                        if (axis == "xy")
                         {
-                            int cx = px, cy = py;
-                            int dx = std::abs(x - px), sx = px < x ? 1 : -1;
-                            int dy = std::abs(y - py), sy = py < y ? 1 : -1;
-                            int err = dx - dy;
-                            while (cx != x || cy != y)
+                            int gx = px + u;
+                            int gy = py + v;
+
+                            int start_z, end_z, step_z;
+                            if (render_mode == "level")
                             {
-                                if (cx != px || cy != py)
+                                start_z = pz;
+                                end_z = pz;
+                                step_z = 1;
+                            }
+                            else if (dir == "t")
+                            {
+                                start_z = pz + ceiling_height;
+                                end_z = pz - render_depth;
+                                step_z = -1;
+                            }
+                            else
+                            {
+                                start_z = pz - render_depth;
+                                end_z = pz + ceiling_height;
+                                step_z = 1;
+                            }
+
+                            std::string terrain_bg = "000000";
+                            std::string best_sym = "";
+                            std::string best_fg = "";
+                            int best_z = pz;
+                            bool found_terrain = false;
+                            bool found_something = false;
+
+                            for (int z = start_z; (step_z < 0 ? z >= end_z : z <= end_z);
+                                 z += step_z)
+                            {
+                                // ИГРОК - ПРОВЕРЯЕМ ПЕРВЫМ ДЕЛОМ (до блокировок)
+                                if (gx == px && gy == py && z == pz)
                                 {
-                                    if (world_.is_column_blocked(cx, cy, pz - 1, pz + 1))
+                                    Tile tr = world_.get_terrain(gx, gy, z);
+                                    terrain_bg = tr.symbol.empty() ? "000000" : tr.color_hex;
+                                    best_sym = "@";
+                                    best_fg = "FFD700"; // ИСПРАВЛЕНО: цвет игрока задан!
+                                    best_z = pz;
+                                    found_something = true;
+                                    break;
+                                }
+
+                                bool has_ov = world_.has_overlay(gx, gy, z);
+                                Tile ov = has_ov ? world_.get_overlay(gx, gy, z) : Tile{};
+                                Tile tr = world_.get_terrain(gx, gy, z);
+
+                                if (has_ov && !ov.symbol.empty())
+                                {
+                                    if (!found_something)
                                     {
-                                        visible = false;
-                                        break;
+                                        best_sym = ov.symbol;
+                                        best_fg = ov.color_hex.empty() ? "FFFFFF" : ov.color_hex;
+                                        best_z = z;
+                                        found_something = true;
                                     }
+                                    if (!ov.transparent) break;
                                 }
-                                int e2 = 2 * err;
-                                if (e2 > -dy)
-                                {
-                                    err -= dy;
-                                    cx += sx;
-                                }
-                                if (e2 < dx)
-                                {
-                                    err += dx;
-                                    cy += sy;
-                                }
-                            }
-                        }
 
-                        if (!visible)
-                        {
-                            row += " ";
-                            continue;
-                        }
-
-                        if (x == px && y == py)
-                        {
-                            std::string bg = "000000";
-                            bool found = false;
-                            if (world_.has_overlay(x, y, pz))
-                            {
-                                Tile ov = world_.get_overlay(x, y, pz);
-                                if (!ov.symbol.empty())
-                                {
-                                    bg = ov.color_hex;
-                                    found = true;
-                                }
-                            }
-                            if (!found)
-                            {
-                                Tile tr = world_.get_terrain(x, y, pz);
                                 if (!tr.symbol.empty())
                                 {
-                                    bg = tr.color_hex;
-                                    found = true;
-                                }
-                            }
-                            if (!found)
-                            {
-                                for (int z = pz - 1; z >= pz - 10; --z)
-                                {
-                                    bool b_found = false;
-                                    if (world_.has_overlay(x, y, z))
+                                    if (!found_terrain)
                                     {
-                                        Tile ov = world_.get_overlay(x, y, z);
-                                        if (!ov.symbol.empty())
+                                        terrain_bg = tr.color_hex.empty() ? "000000" : tr.color_hex;
+                                        found_terrain = true;
+                                        if (!found_something)
                                         {
-                                            bg = ov.color_hex;
-                                            b_found = true;
+                                            best_sym = " ";
+                                            best_fg = terrain_bg;
+                                            best_z = z;
+                                            found_something = true;
                                         }
                                     }
-                                    if (!b_found)
-                                    {
-                                        Tile tr = world_.get_terrain(x, y, z);
-                                        if (!tr.symbol.empty())
-                                        {
-                                            bg = tr.color_hex;
-                                            b_found = true;
-                                        }
-                                    }
-                                    if (b_found)
-                                    {
-                                        int dist = (pz - 1) - z;
-                                        if (dist > 0)
-                                        {
-                                            bg = adjust_brightness(
-                                                bg, std::pow(1.0 / light_step, dist));
-                                        }
-                                        break;
-                                    }
+                                    if (!tr.transparent) break;
                                 }
-                            }
-                            row += "[cFFD700][bg" + bg + "]@[/bg][/c]";
-                            continue;
-                        }
 
-                    // Проверка X (только в Level режиме и только для terrain)
-                        bool blocks_movement = false;
-                        if (!topdown && !world_.has_overlay(x, y, pz) &&
-                            !world_.is_walkable(x, y, pz))
-                        {
-                            bool can_climb = false;
-                            for (int step = 1; step <= max_step_up; ++step)
+                                if (render_mode == "level" && z == pz) break;
+                            }
+
+                            if (found_something)
                             {
-                                if (world_.is_walkable(x, y, pz + step) &&
-                                    world_.is_walkable(x, y, pz + step + 1))
+                                // ИСПРАВЛЕНО: d_val знаковое (положительное = выше, отрицательное =
+                                // ниже)
+                                int d_val = best_z - pz;
+                                int r_val =
+                                    static_cast<int>(std::sqrt(static_cast<double>(u * u + v * v)));
+                                best_cell = {{"s", best_sym}, {"f", best_fg}, {"b", terrain_bg},
+                                             {"d", d_val},    {"r", r_val},   {"z", best_z}};
+                            }
+                        }
+                        else if (axis == "xz" || axis == "yz")
+                        {
+                            int start_x = px, start_y = py, start_z = pz;
+                            int dx = 0, dy = 0;
+
+                            if (axis == "xz")
+                            {
+                                start_x = px + u;
+                                start_z = pz - v;
+                                // ИСПРАВЛЕНО: старт на уровне игрока, луч идёт вглубь
+                                if (dir == "t")
                                 {
-                                    can_climb = true;
-                                    break;
+                                    start_y = py;
+                                    dy = 1;
                                 }
-                            }
-                            if (!can_climb) blocks_movement = true;
-                        }
-
-                        if (blocks_movement)
-                        {
-                            std::string wall_color = "808080";
-                            Tile tr = world_.get_terrain(x, y, pz);
-                            if (!tr.symbol.empty()) wall_color = tr.color_hex;
-                            row += "[cFF0000][bg" + wall_color + "]X[/bg][/c]";
-                            continue;
-                        }
-
-                        // ИСПРАВЛЕНО: level рендерит ТОЛЬКО слой игрока
-                        int start_z, end_z;
-                        if (topdown)
-                        {
-                            start_z = pz + ceiling_height;
-                            end_z = pz - render_depth;
-                        }
-                        else
-                        {
-                            start_z = pz;
-                            end_z = pz; // ТОЛЬКО уровень игрока
-                        }
-
-                        Tile top_tile;
-                        int visible_z = -100;
-                        bool top_is_overlay = false;
-                        for (int z = start_z; z >= end_z; --z)
-                        {
-                            if (world_.has_overlay(x, y, z))
-                            {
-                                Tile ov = world_.get_overlay(x, y, z);
-                                if (!ov.symbol.empty())
+                                else
                                 {
-                                    visible_z = z;
-                                    top_tile = ov;
-                                    top_is_overlay = true;
-                                    break;
+                                    start_y = py;
+                                    dy = -1;
                                 }
-                            }
-                            Tile tr = world_.get_terrain(x, y, z);
-                            if (!tr.symbol.empty())
-                            {
-                                visible_z = z;
-                                top_tile = tr;
-                                top_is_overlay = false;
-                                break;
-                            }
-                        }
-
-                    if (visible_z != -100)
-                        {
-                            std::string fg = top_tile.color_hex;
-                            std::string bg = "000000";
-                            std::string sym = top_tile.symbol;
-
-                            // ИСПРАВЛЕНО: для оверлеев фон берём с ближайшего terrain вниз
-                            if (top_is_overlay)
-                            {
-                                for (int bz = visible_z; bz >= end_z; --bz)
-                                {
-                                    Tile under_tr = world_.get_terrain(x, y, bz);
-                                    if (!under_tr.symbol.empty())
-                                    {
-                                        bg = under_tr.color_hex;
-                                        break;
-                                    }
-                                }
-                            }
-                            else if (!top_tile.bg_color_hex.empty())
-                            {
-                                bg = top_tile.bg_color_hex;
-                            }
-                            else if (sym == " ")
-                            {
-                                bg = fg;
-                            }
-
-                            int diff = visible_z - pz;
-                            double factor = std::pow(light_step, static_cast<double>(diff));
-
-                            if (top_is_overlay && top_tile.transparent)
-                            {
-                                fg = adjust_brightness(fg, factor);
-                            }
-                            else if (sym == " ")
-                            {
-                                bg = adjust_brightness(bg, factor);
                             }
                             else
                             {
-                                fg = adjust_brightness(fg, factor);
-                                bg = adjust_brightness(bg, factor);
+                                start_y = py + u;
+                                start_z = pz - v;
+                                if (dir == "t")
+                                {
+                                    start_x = px;
+                                    dx = 1;
+                                }
+                                else
+                                {
+                                    start_x = px;
+                                    dx = -1;
+                                }
                             }
 
-                            if (factor >= 2.0)
+                            int cx = start_x, cy = start_y, cz = start_z;
+                            int dist = 0;
+
+                            std::string terrain_bg = "000000";
+                            std::string best_sym = "";
+                            std::string best_fg = "";
+                            int best_z = pz;
+                            bool found_something = false;
+
+                            while (dist < 50)
                             {
-                                row += "[cFFFFFF][bgFFFFFF] [/bg][/c]";
+                                // ИГРОК - ПЕРВЫМ ДЕЛОМ
+                                if (cx == px && cy == py && cz == pz)
+                                {
+                                    Tile tr = world_.get_terrain(cx, cy, cz);
+                                    terrain_bg = tr.symbol.empty() ? "000000" : tr.color_hex;
+                                    best_sym = "@";
+                                    best_fg = "FFD700";
+                                    best_z = pz;
+                                    found_something = true;
+                                    break;
+                                }
+
+                                bool has_ov = world_.has_overlay(cx, cy, cz);
+                                Tile ov = has_ov ? world_.get_overlay(cx, cy, cz) : Tile{};
+                                Tile tr = world_.get_terrain(cx, cy, cz);
+
+                                if (has_ov && !ov.symbol.empty())
+                                {
+                                    if (!found_something)
+                                    {
+                                        best_sym = ov.symbol;
+                                        best_fg = ov.color_hex.empty() ? "FFFFFF" : ov.color_hex;
+                                        terrain_bg = tr.symbol.empty() ? "000000" : tr.color_hex;
+                                        best_z = cz;
+                                        found_something = true;
+                                    }
+                                    if (!ov.transparent) break;
+                                }
+
+                                if (!tr.symbol.empty())
+                                {
+                                    if (!found_something)
+                                    {
+                                        best_sym = " ";
+                                        best_fg = tr.color_hex.empty() ? "808080" : tr.color_hex;
+                                        terrain_bg = best_fg;
+                                        best_z = cz;
+                                        found_something = true;
+                                    }
+                                    if (!tr.transparent) break;
+                                }
+
+                                cx += dx;
+                                cy += dy; // cz не меняется (луч горизонтальный)
+                                dist++;
                             }
-                            else if (factor <= 0.05)
+
+                            if (found_something)
                             {
-                                row += "[c000000][bg000000] [/bg][/c]";
-                            }
-                            else if (sym == " ")
-                            {
-                                row += "[bg" + bg + "] [/bg]";
-                            }
-                            else
-                            {
-                                row += "[c" + fg + "][bg" + bg + "]" + sym + "[/bg][/c]";
+                                int d_val = best_z - pz;
+                                best_cell = {{"s", best_sym}, {"f", best_fg}, {"b", terrain_bg},
+                                             {"d", d_val},    {"r", dist},    {"z", best_z}};
                             }
                         }
-                        else
-                        {
-                            row += " ";
-                        }
+
+                        grid.push_back(best_cell);
                     }
-                    grid.push_back(row);
                 }
 
                 if (map_update_cb_)
                 {
                     nlohmann::json payload;
-                    payload["x"] = px;
-                    payload["y"] = py;
-                    payload["z"] = pz;
-                    payload["grid"] = grid;
+                    payload["c"] = {px, py, pz};
+                    payload["a"] = axis;
+                    payload["d"] = dir;
+                    payload["m"] = render_mode;
+                    payload["w"] = w;
+                    payload["h"] = h;
+                    payload["g"] = grid;
                     map_update_cb_(p.id(), payload);
                 }
             }
             catch (const std::exception& e)
             {
-                MCG_ERROR("Exception in update_fov: {}", e.what());
+                MCG_ERROR("Exception in update_render: {}", e.what());
             }
         });
 }

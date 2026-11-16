@@ -30,7 +30,8 @@ void Server::run()
             auto it = sessions_.find(player_id);
             if (it != sessions_.end())
             {
-                network_->send(it->second, mcg::protocol::MessageType::WorldSnapshot, payload);
+                // ÈÑÏÐÀÂËÅÍÎ: øë¸ì WorldRender, à íå WorldSnapshot
+                network_->send(it->second, mcg::protocol::MessageType::WorldRender, payload);
             }
         });
 

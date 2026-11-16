@@ -1,7 +1,7 @@
 return {
     name = "move",
-    description = "Move player",
-    args = "<direction>",
+    description = "Move player (relative to camera)",
+    args = "<north|south|east|west|up|down>",
     category = "movement",
     on_command = function(player, args)
         if #args < 1 then return end
@@ -11,56 +11,98 @@ return {
         local y = api.get_attr(player, "pos_y")
         local z = api.get_attr(player, "pos_z")
         local is_flying = api.get_attr(player, "is_flying") or false
+        local view_axis = api.get_attr(player, "view_axis") or "xy"
+        local view_dir = api.get_attr(player, "view_dir") or "t"
         
         local dx, dy, dz = 0, 0, 0
-        if dir == "north" then dy = -1
-        elseif dir == "south" then dy = 1
-        elseif dir == "east" then dx = 1
-        elseif dir == "west" then dx = -1
-        elseif dir == "up" then dz = 1
-        elseif dir == "down" then dz = -1
+        
+        -- Определяем направление движения относительно оси взгляда
+        if view_axis == "xy" then
+            -- TopDown: как обычно
+            if dir == "north" then dy = -1
+            elseif dir == "south" then dy = 1
+            elseif dir == "east" then dx = 1
+            elseif dir == "west" then dx = -1
+            elseif dir == "up" then dz = 1
+            elseif dir == "down" then dz = -1
+            end
+        elseif view_axis == "xz" then
+            -- Side (Terraria): X - горизонталь, Y - глубина, Z - вертикаль
+            if dir == "north" then 
+                dy = (view_dir == "t") and -1 or 1
+            elseif dir == "south" then
+                dy = (view_dir == "t") and 1 or -1
+            elseif dir == "east" then
+                dx = (view_dir == "t") and 1 or -1
+            elseif dir == "west" then
+                dx = (view_dir == "t") and -1 or 1
+            elseif dir == "up" then dz = 1
+            elseif dir == "down" then dz = -1
+            end
+        elseif view_axis == "yz" then
+            -- Side (Front): Y - горизонталь, X - глубина, Z - вертикаль
+            if dir == "north" then
+                dx = (view_dir == "t") and -1 or 1
+            elseif dir == "south" then
+                dx = (view_dir == "t") and 1 or -1
+            elseif dir == "east" then
+                dy = (view_dir == "t") and 1 or -1
+            elseif dir == "west" then
+                dy = (view_dir == "t") and -1 or 1
+            elseif dir == "up" then dz = 1
+            elseif dir == "down" then dz = -1
+            end
+        else
+            -- Fallback
+            if dir == "north" then dy = -1
+            elseif dir == "south" then dy = 1
+            elseif dir == "east" then dx = 1
+            elseif dir == "west" then dx = -1
+            elseif dir == "up" then dz = 1
+            elseif dir == "down" then dz = -1
+            end
         end
         
         local nx, ny, nz = x + dx, y + dy, z + dz
         
-        -- Вертикальное движение (полет)
+        -- Вертикальное движение (только в полёте)
         if dz ~= 0 then
             if is_flying then
-                api.set_attr(player, "pos_z", nz)
-                api.update_fov(player)
-            end
-            return
-        end
-        
-        if is_flying then
-            if api.is_walkable(nx, ny, nz) then
                 api.set_attr(player, "pos_x", nx)
                 api.set_attr(player, "pos_y", ny)
-                api.update_fov(player)
+                api.set_attr(player, "pos_z", nz)
+                api.update_render(player)
             end
             return
         end
 
-        -- ГРАВИТАЦИЯ (Падаем на 1 блок вниз за ход, если под нами пусто)
+        if is_flying then
+            if api.is_walkable(nx, ny, nz) then
+                api.set_attr(player, "pos_x", nx)
+                api.set_attr(player, "pos_y", ny)
+                api.set_attr(player, "pos_z", nz)
+                api.update_render(player)
+            end
+            return
+        end
+
+        -- Гравитация
         if api.is_walkable(x, y, z - 1) then
             api.set_attr(player, "pos_z", z - 1)
-            api.update_fov(player)
-            return -- Падение занимает ход, больше ничего не делаем
+            api.update_render(player)
+            return 
         end
         
-        -- Движение пешком
+        -- Горизонтальное движение с step-up
         if api.is_walkable(nx, ny, z) then
             api.set_attr(player, "pos_x", nx)
             api.set_attr(player, "pos_y", ny)
-            api.update_fov(player)
+            api.update_render(player)
         elseif api.is_walkable(nx, ny, z + 1) and api.is_walkable(nx, ny, z + 2) then
-            -- Забираемся на 1 блок вверх
             api.set_attr(player, "pos_x", nx)
             api.set_attr(player, "pos_y", ny)
             api.set_attr(player, "pos_z", z + 1)
-            api.update_fov(player)
-        else
-            api.broadcast("Blocked by wall!")
+            api.update_render(player)
         end
     end
 }

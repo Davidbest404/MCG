@@ -1,4 +1,5 @@
 #include "client/network/connection.h"
+#include "client/ui/client_renderer.h"
 #include "client/ui/console_ui.h"
 #include "shared/util/logging.h"
 #include <atomic>
@@ -75,12 +76,12 @@ int main(int argc, char** argv)
                     if (chat_history.size() > 50) chat_history.erase(chat_history.begin());
                     dirty = true;
                 }
-                else if (type == mcg::protocol::MessageType::WorldSnapshot)
+                else if (type == mcg::protocol::MessageType::WorldRender)
                 {
-                    auto grid = payload["grid"].get<std::vector<std::string>>();
-                    current_map.clear();
-                    for (const auto& row : grid)
-                        current_map += row + "\n";
+                    float light_step = 1.25f;
+                    current_map = mcg::client::ClientRenderer::render_map(payload, light_step);
+                    MCG_DEBUG("Received WorldRender, map length: {}",
+                              current_map.size()); // Отладка
                     dirty = true;
                 }
             });
