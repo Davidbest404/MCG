@@ -5,7 +5,25 @@
   var handlers = [];
 
   function connect(url) {
-    ws = new WebSocket(url || ('ws://' + location.host + '/ws'));
+    if (!url) url = 'ws://' + location.host + '/ws';
+    
+    // Автоматическая починка адреса (чтобы не было ошибок ввода)
+    if (!/^wss?:\/\//i.test(url)) {
+      url = 'ws://' + url;
+    }
+    // Если нет в конце /ws, добавляем его
+    if (!/\/ws$/i.test(url) && !/\/ws\?/.test(url)) {
+      url = url.replace(/\/$/, '') + '/ws';
+    }
+
+    // Закрываем старое соединение, если оно было
+    if (ws) {
+      ws.onclose = null;
+      ws.close();
+    }
+
+    ws = new WebSocket(url);
+    
     ws.onopen = function () { emit('open'); };
     ws.onclose = function () { emit('close'); };
     ws.onerror = function (e) { emit('error', e); };
@@ -17,7 +35,11 @@
   }
 
   function send(obj) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify(obj));
+    } else {
+      console.warn("Нет соединения с сервером");
+    }
   }
 
   function on(fn) { handlers.push(fn); }

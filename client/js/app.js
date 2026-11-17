@@ -32,8 +32,18 @@
 
     // Обработка сетевых событий
     MCGNet.on(function (type, data) {
-      if (type === 'open') { status.textContent = 'подключено'; }
-      if (type === 'close') { status.textContent = 'отключено'; }
+      if (type === 'open') { 
+          status.textContent = 'подключено'; 
+          status.style.color = '#4caf50'; // Зеленый
+      }
+      if (type === 'close') { 
+          status.textContent = 'отключено'; 
+          status.style.color = '#f44336'; // Красный
+          appendLog('Система', 'Соединение с сервером потеряно.');
+      }
+      if (type === 'error') { 
+          appendLog('Система', 'Ошибка подключения. Проверьте адрес сервера.');
+      }
       if (type === 'message') handleMessage(data);
     });
 
