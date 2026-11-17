@@ -1,0 +1,53 @@
+<!-- MCG / CDI-AI — Copyright (C) 2026 Davidbest404 -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MCG — CDI-AI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Экран выбора сервера -->
+  <div id="server-list-screen">
+    <div class="server-panel">
+      <h2>Серверы</h2>
+      <ul id="saved-servers"></ul>
+      <form id="add-server-form">
+        <input id="server-name" placeholder="Название" required>
+        <input id="server-url" placeholder="ws://localhost:8080/ws" required>
+        <button type="submit">Добавить</button>
+      </form>
+      <button id="connect-default" class="primary-btn">Быстрое подключение (localhost)</button>
+    </div>
+  </div>
+
+  <!-- Основной интерфейс игры -->
+  <div id="app" style="display: none;">
+    <header>
+      <span id="status">отключено</span>
+      <button id="toggle-render">2D</button>
+    </header>
+    <main>
+      <div id="world-container">
+        <canvas id="world"></canvas>
+      </div>
+      <aside id="side">
+        <div id="chat-log"></div>
+        <form id="chat-form">
+          <input id="chat-input" placeholder="Сообщение..." autocomplete="off">
+          <button type="submit">➤</button>
+        </form>
+      </aside>
+    </main>
+  </div>
+
+  <script src="js/net.js"></script>
+  <script src="js/render2d.js"></script>
+  <script src="js/render3d.js"></script>
+  <script src="js/tts.js"></script>
+  <script src="js/servers.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
