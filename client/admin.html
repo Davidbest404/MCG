@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>MCG Admin</title>
+  <style>
+    body { background: #121212; color: #fff; font-family: sans-serif; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #444; padding: 10px; text-align: left; }
+    th { background: #222; }
+    button { padding: 5px 10px; cursor: pointer; color: white; border: none; border-radius: 3px; }
+    .ban { background: #f44336; }
+    .unban { background: #4caf50; }
+  </style>
+</head>
+<body>
+  <h1>Управление игроками</h1>
+  <table id="user-table">
+    <thead>
+      <tr>
+        <th>Имя</th>
+        <th>IP-адреса</th>
+        <th>Статус</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    function loadUsers() {
+      // В будущем мы сделаем API, сейчас это просто заглушка для визуала.
+      // Нам понадобится эндпоинт /api/admin/users
+      fetch('/api/admin/users')
+        .then(r => r.json())
+        .then(data => {
+          var tbody = document.querySelector('#user-table tbody');
+          tbody.innerHTML = '';
+          for (var username in data) {
+            var user = data[username];
+            var tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td>${user.username}</td>
+              <td>${user.ips.join(', ')}</td>
+              <td>${user.is_banned ? 'Забанен' : 'Активен'}</td>
+              <td>
+                <button class="${user.is_banned ? 'unban' : 'ban'}" onclick="toggleBan('${user.username}', ${!user.is_banned})">
+                  ${user.is_banned ? 'Разбанить' : 'Забанить'}
+                </button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          }
+        });
+    }
+
+    function toggleBan(username, ban) {
+      fetch('/api/admin/ban', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, ban: ban })
+      }).then(() => loadUsers());
+    }
+
+    loadUsers();
+  </script>
+</body>
+</html>

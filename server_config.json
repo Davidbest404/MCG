@@ -1,0 +1,7 @@
+{
+  "name": "Тест",
+  "description": "Добро пожаловать!",
+  "max_players": 100,
+  "map_seed": 12345,
+  "coordinate_type": "integer"
+}

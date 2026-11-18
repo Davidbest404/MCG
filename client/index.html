@@ -1,5 +1,3 @@
-<!-- MCG / CDI-AI — Copyright (C) 2026 Davidbest404 -->
-<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!doctype html>
 <html lang="ru">
 <head>
@@ -9,7 +7,6 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- Экран выбора сервера -->
   <div id="server-list-screen">
     <div class="server-panel">
       <h2>Серверы</h2>
@@ -23,24 +20,35 @@
     </div>
   </div>
 
-  <!-- Основной интерфейс игры -->
   <div id="app" style="display: none;">
     <header>
-      <span id="status">отключено</span>
+      <div style="display:flex; align-items:center; gap: 15px;">
+        <span id="server-title" style="font-weight:bold; font-size: 18px;">Сервер</span>
+        <span id="server-ip" class="blurred" title="Нажмите, чтобы показать">IP: xxx.xxx.xxx.xxx</span>
+        <span id="status" style="color: #f44336;">отключено</span>
+      </div>
       <div style="display:flex; gap:10px;">
-        <button id="toggle-hotbar" title="Скрыть/Показать панель">📥 Панель</button>
-        <button id="toggle-hud" title="Скрыть/Показать кнопки">👁️ Кнопки</button>
+        <span id="player-name" style="color:#4caf50; font-weight:bold; margin-right: 10px;"></span>
+        <button id="toggle-editor">✏️ Редактор</button>
+        <button id="toggle-hotbar">📥 Панель</button>
+        <button id="toggle-hud">👁️ Кнопки</button>
         <button id="toggle-render">2D</button>
       </div>
     </header>
     <main>
       <div id="world-container">
         <canvas id="world"></canvas>
-        <div id="hud"></div>
-        <div id="hotbar"></div> <!-- Нижняя панель -->
+        <div id="hud">
+		  <div id="mobile-dpad">
+          <button class="dpad-btn" id="dpad-up">▲</button>
+          <button class="dpad-btn" id="dpad-left">◀</button>
+          <button class="dpad-btn" id="dpad-down">▼</button>
+          <button class="dpad-btn" id="dpad-right">▶</button>
+        </div>
+		</div>
+        <div id="hotbar"></div>
       </div>
       <aside id="side">
-		<div id="action-bar"></div>
         <div id="chat-log"></div>
         <form id="chat-form">
           <input id="chat-input" placeholder="Сообщение..." autocomplete="off">
@@ -48,6 +56,33 @@
         </form>
       </aside>
     </main>
+  </div>
+
+  <div id="editor-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Редактор кнопок</h3>
+      <form id="add-btn-form">
+        <input id="btn-label" placeholder="Название (например: Привет)" required>
+        <input id="btn-command" placeholder="Команда (например: !hello)" required>
+        <input id="btn-key" placeholder="Клавиша (например: KeyW, Space, KeyF)" optional>
+        <button type="submit">Добавить кнопку</button>
+      </form>
+      <hr>
+      <ul id="custom-btn-list"></ul>
+      <button id="close-editor" class="primary-btn" style="background:#f44336; margin-top:10px;">Закрыть</button>
+    </div>
+  </div>
+
+  <div id="auth-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Вход в игру</h3>
+      <form id="auth-form">
+        <input id="auth-username" placeholder="Ваше имя" required autocomplete="username">
+        <input id="auth-password" type="password" placeholder="Пароль" required autocomplete="current-password">
+        <button type="submit" class="primary-btn">Войти / Зарегистрироваться</button>
+      </form>
+      <div id="auth-error" style="color: #f44336; margin-top: 10px; font-size: 14px;"></div>
+    </div>
   </div>
 
   <script src="js/net.js"></script>

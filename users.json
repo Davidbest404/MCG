@@ -1,0 +1,33 @@
+{
+  "David": {
+    "username": "David",
+    "password_hash": "$2a$10$X1Mz5v7u/rTYK3Vqwl8Xpuf4tjRJLOgFXIW0Y7OkI.OxX3WKp8lOW",
+    "ips": [
+      "127.0.0.1:53711",
+      "127.0.0.1:53754",
+      "127.0.0.1"
+    ],
+    "is_banned": false,
+    "is_admin": true
+  },
+  "Давил": {
+    "username": "Давил",
+    "password_hash": "$2a$10$8atamisc8yO.Vz52JFkTpOHIWHFJxBU6RbnzvAtaYtFxivgqsSEWW",
+    "ips": [
+      "192.168.31.102:49998",
+      "192.168.31.102:37050",
+      "192.168.31.102"
+    ],
+    "is_banned": false,
+    "is_admin": false
+  },
+  "Данил колбасенко": {
+    "username": "Данил колбасенко",
+    "password_hash": "$2a$10$mC7eqUx.qzn4VMIPJDV7degyI8wEVYZ7MeCfnY78.9FYOQs22hgYq",
+    "ips": [
+      "192.168.31.102"
+    ],
+    "is_banned": false,
+    "is_admin": false
+  }
+}

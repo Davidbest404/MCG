@@ -1,52 +1,127 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
 (function (global) {
   'use strict';
-  var canvas, ctx, tiles = [];
+  var canvas, ctx;
   var TILE = 32;
+  var worldMap = null;
+  var players = {}; 
+  var myUsername = null;
+  var cameraX = 0, cameraY = 0;
+  var cameraAngle = 0; 
 
   function init(c) {
     canvas = c;
     ctx = canvas.getContext('2d');
-    resize();
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas.parentElement);
     window.addEventListener('resize', resize);
-    generateDemoMap();
-    draw();
+    resize();
   }
 
   function resize() {
     if (!canvas) return;
-    canvas.width = canvas.clientWidth || 640;
-    canvas.height = canvas.clientHeight || 360;
+    var w = canvas.parentElement.clientWidth;
+    var h = canvas.parentElement.clientHeight;
+    if (w > 0 && h > 0) {
+      canvas.width = w; canvas.height = h;
+      draw();
+    }
+  }
+
+  function setMap(mapData) {
+    if (!mapData) return;
+    worldMap = mapData;
+    setTimeout(resize, 100); 
+  }
+
+  function setPlayers(playerList) {
+    players = {};
+    playerList.forEach(p => players[p.username] = p);
+    if (myUsername && players[myUsername]) {
+      cameraX = (players[myUsername].x * TILE);
+      cameraY = (players[myUsername].y * TILE);
+    }
     draw();
   }
 
-  function generateDemoMap() {
-    tiles = [];
-    for (var y = 0; y < 20; y++) {
-      for (var x = 0; x < 40; x++) {
-        // Псевдо-шум: трава/вода/камень по синусу — без «швов», т.к. считаем по мировым координатам
-        var n = Math.sin(x * 0.3) + Math.cos(y * 0.4);
-        tiles.push({ x: x, y: y, t: n > 0.8 ? 'water' : (n < -0.8 ? 'stone' : 'grass') });
-      }
+  function updatePlayer(username, x, y) {
+    if (!players[username]) players[username] = { username: username, x: x, y: y };
+    else { players[username].x = x; players[username].y = y; }
+    
+    if (username === myUsername) {
+      cameraX = (x * TILE);
+      cameraY = (y * TILE);
     }
+    draw();
+  }
+
+  function setMyUsername(name) { myUsername = name; }
+  function getCameraAngle() { return cameraAngle; }
+  
+  function rotateCamera(angle) {
+      cameraAngle += angle;
+      draw();
+  }
+
+  function setCameraAngle(angle) {
+      cameraAngle = angle;
+      draw();
   }
 
   function draw() {
     if (!ctx) return;
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (var i = 0; i < tiles.length; i++) {
-      var t = tiles[i];
-      var px = t.x * TILE, py = t.y * TILE;
-      if (px > canvas.width || py > canvas.height) continue;
-      ctx.fillStyle = t.t === 'water' ? '#1e3a5f' : (t.t === 'stone' ? '#555' : '#2d5a27');
-      ctx.fillRect(px, py, TILE - 1, TILE - 1);
-      if (t.t === 'grass') {
-        ctx.fillStyle = '#3e7a35';
-        ctx.fillRect(px + 6, py + 6, 4, 4);
+    if (!worldMap) return;
+
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(cameraAngle * Math.PI / 180);
+    
+    var maxDim = Math.max(canvas.width, canvas.height) / TILE + 2;
+    var startX = Math.floor((cameraX / TILE) - maxDim);
+    var endX = Math.ceil((cameraX / TILE) + maxDim);
+    var startY = Math.floor((cameraY / TILE) - maxDim);
+    var endY = Math.ceil((cameraY / TILE) + maxDim);
+
+    for (var y = startY; y < endY; y++) {
+      for (var x = startX; x < endX; x++) {
+        if (y < 0 || y >= worldMap.length || x < 0 || x >= worldMap[0].length) continue;
+        var tile = worldMap[y][x];
+        var px = (x * TILE) - cameraX;
+        var py = (y * TILE) - cameraY;
+
+        if (tile === 1) ctx.fillStyle = '#1e3a5f';
+        else if (tile === 2) ctx.fillStyle = '#555';
+        else ctx.fillStyle = '#2d5a27';
+        
+        ctx.fillRect(px, py, TILE, TILE);
+        if (tile === 0) { ctx.fillStyle = '#3e7a35'; ctx.fillRect(px + 8, py + 8, 4, 4); }
       }
     }
+
+    for (var uname in players) {
+      var p = players[uname];
+      var px = (p.x * TILE) - cameraX;
+      var py = (p.y * TILE) - cameraY;
+
+      ctx.beginPath();
+      ctx.arc(px + TILE/2, py + TILE/2, TILE/2 - 2, 0, Math.PI * 2);
+      ctx.fillStyle = (uname === myUsername) ? '#4caf50' : '#f44336';
+      ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
+      ctx.save();
+      ctx.translate(px + TILE/2, py + TILE/2); 
+      ctx.rotate(-cameraAngle * Math.PI / 180); 
+      ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(uname, 0, -TILE/2 - 5);
+      ctx.restore();
+    }
+    ctx.restore(); 
   }
 
-  global.MCGRender2D = { init: init, draw: draw };
+  global.MCGRender2D = { 
+      init: init, setMap: setMap, setPlayers: setPlayers, 
+      updatePlayer: updatePlayer, setMyUsername: setMyUsername,
+      resize: resize, rotateCamera: rotateCamera, setCameraAngle: setCameraAngle,
+      getCameraAngle: getCameraAngle
+  };
 })(window);
