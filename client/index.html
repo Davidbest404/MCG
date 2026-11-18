@@ -27,13 +27,20 @@
   <div id="app" style="display: none;">
     <header>
       <span id="status">отключено</span>
-      <button id="toggle-render">2D</button>
+      <div style="display:flex; gap:10px;">
+        <button id="toggle-hotbar" title="Скрыть/Показать панель">📥 Панель</button>
+        <button id="toggle-hud" title="Скрыть/Показать кнопки">👁️ Кнопки</button>
+        <button id="toggle-render">2D</button>
+      </div>
     </header>
     <main>
       <div id="world-container">
         <canvas id="world"></canvas>
+        <div id="hud"></div>
+        <div id="hotbar"></div> <!-- Нижняя панель -->
       </div>
       <aside id="side">
+		<div id="action-bar"></div>
         <div id="chat-log"></div>
         <form id="chat-form">
           <input id="chat-input" placeholder="Сообщение..." autocomplete="off">

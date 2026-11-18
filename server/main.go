@@ -1,4 +1,3 @@
-// server/main.go
 package main
 
 import (
@@ -8,8 +7,10 @@ import (
 	"flag"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -19,13 +20,14 @@ import (
 //go:embed all:web/static
 var webFS embed.FS
 
-// Server ...
 type Server struct {
-	lua *LuaManager
+	lua     *LuaManager
+	mu      sync.Mutex
+	clients map[*websocket.Conn]bool
+	port    string
 }
 
 func main() {
-	// Настройка порта: аргумент > переменная окружения > флаг > по умолчанию
 	defaultPort := "8080"
 	if envPort := os.Getenv("MCG_PORT"); envPort != "" {
 		defaultPort = envPort
@@ -33,59 +35,124 @@ func main() {
 
 	port := flag.String("port", defaultPort, "порт для HTTP/WebSocket сервера")
 	flag.Parse()
-
-	// Если пользователь передал аргумент без флага (например, ./mcg-server 8081)
 	if flag.NArg() > 0 {
 		*port = flag.Arg(0)
 	}
 
-	s := &Server{lua: NewLuaManager("plugins")}
+	s := &Server{
+		lua:     NewLuaManager("plugins"),
+		clients: make(map[*websocket.Conn]bool),
+		port:    *port,
+	}
 	if err := s.lua.LoadAll(); err != nil {
-		log.Println("lua load:", err)
+		log.Println("lua load error:", err)
 	}
 
 	static, _ := fs.Sub(webFS, "web/static")
 	http.Handle("/", http.FileServer(http.FS(static)))
 	http.HandleFunc("/ws", s.handleWS)
+	http.HandleFunc("/api/status", s.handleStatus)
 	http.HandleFunc("/api/reload", s.handleReload)
 
 	log.Printf("MCG CDI-AI слушает на :%s\n", *port)
 	log.Fatal(http.ListenAndServe(":"+*port, nil))
 }
 
+func (s *Server) getLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "127.0.0.1:" + s.port
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String() + ":" + s.port
+}
+
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	s.mu.Lock()
+	playerCount := len(s.clients)
+	s.mu.Unlock()
+
+	status := map[string]any{
+		"name":        "Тестовый сервер",
+		"description": "Сервер CDI-AI",
+		"ip":          s.getLocalIP(),
+		"players":     playerCount,
+	}
+	json.NewEncoder(w).Encode(status)
+}
+
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
 	}
 	defer c.CloseNow()
 	c.SetReadLimit(64 * 1024)
 
+	s.mu.Lock()
+	s.clients[c] = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.clients, c)
+		s.mu.Unlock()
+	}()
+
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	wsjson.Write(ctx, c, map[string]any{
 		"type": "welcome",
-		"text": "Добро пожаловать в MCG (CDI-AI)",
+		"text": "Добро пожаловать! Сервер: " + s.getLocalIP(),
+	})
+
+	// Запрашиваем кнопки (исправлено, никаких := внутри скобок)
+	buttons := s.lua.GetUIButtons()
+	wsjson.Write(ctx, c, map[string]any{
+		"type":    "ui_buttons",
+		"buttons": buttons,
 	})
 
 	for {
-		readCtx, cancelRead := context.WithTimeout(ctx, 60*time.Second)
 		var msg map[string]any
-		err := wsjson.Read(readCtx, c, &msg)
-		cancelRead()
+		err := wsjson.Read(ctx, c, &msg)
 		if err != nil {
 			return
 		}
 
 		reply := s.lua.OnMessage(msg)
 		if reply != nil {
-			writeCtx, cancelWrite := context.WithTimeout(ctx, 10*time.Second)
-			wsjson.Write(writeCtx, c, reply)
-			cancelWrite()
+			// Логика разделения сообщений
+			if senderText, ok := reply["sender_text"].(string); ok {
+				wsjson.Write(ctx, c, map[string]any{"type": "chat", "from": "Система", "text": senderText})
+			}
+			if othersText, ok := reply["others_text"].(string); ok {
+				s.broadcastExcept(c, map[string]any{"type": "chat", "from": "Система", "text": othersText})
+			}
+			if isBroadcast, ok := reply["broadcast"].(bool); ok && isBroadcast {
+				s.broadcastExcept(c, reply)
+			} else if reply["sender_text"] == nil && reply["others_text"] == nil {
+				wsjson.Write(ctx, c, reply)
+			}
 		}
+	}
+}
+
+func (s *Server) broadcastExcept(sender *websocket.Conn, msg map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for client := range s.clients {
+		if client == sender {
+			continue
+		}
+		go func(c *websocket.Conn) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			wsjson.Write(ctx, c, msg)
+		}(client)
 	}
 }
 

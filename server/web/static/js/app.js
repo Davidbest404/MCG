@@ -44,8 +44,19 @@
       if (type === 'error') { 
           appendLog('Система', 'Ошибка подключения. Проверьте адрес сервера.');
       }
-      if (type === 'message') handleMessage(data);
-    });
+      if (type === 'message') {
+          if (data.type === 'ui_buttons') {
+              renderActionButtons(data.buttons);
+          } else {
+              handleMessage(data);
+          }
+      }
+      if (type === 'transfer_start') {
+          // Показываем экран загрузки (вместо этого можно сделать красивый оверлей)
+          document.getElementById('status').textContent = 'Переход на другой сервер...';
+          MCGNet.connect(data); // data - это URL нового сервера
+      }
+	  });
 
     // Отправка сообщений в чат
     document.getElementById('chat-form').addEventListener('submit', function (e) {
@@ -56,6 +67,13 @@
       appendLog('Вы', text);
       input.value = '';
     });
+	
+    document.getElementById('toggle-hotbar').onclick = function() {
+        document.getElementById('hotbar').classList.toggle('hidden');
+    };
+    document.getElementById('toggle-hud').onclick = function() {
+        document.getElementById('hud').classList.toggle('hidden-buttons');
+    };
 
     // Показываем экран выбора сервера при запуске
     showServerList();
@@ -133,6 +151,110 @@
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
   }
+
+// --- СИСТЕМА HUD КНОПОК И ПЕРЕТАСКИВАНИЯ ---
+function renderActionButtons(buttons) {
+    var hud = document.getElementById('hud');
+    var hotbar = document.getElementById('hotbar');
+    hud.innerHTML = ''; hotbar.innerHTML = '';
+
+    buttons.forEach(function(btnData) {
+        var btn = document.createElement('div');
+        btn.className = 'hud-btn';
+        btn.textContent = btnData.label;
+        
+        var savedState = localStorage.getItem('hud_state_' + btnData.id);
+        
+        if (savedState === 'in_hotbar' || !savedState) {
+            hotbar.appendChild(btn);
+        } else {
+            var pos = JSON.parse(savedState);
+            btn.style.position = 'absolute';
+            btn.style.left = pos.left + 'px';
+            btn.style.top = pos.top + 'px';
+            hud.appendChild(btn);
+        }
+
+        btn.onclick = function(e) {
+            if (btn.dataset.dragged === "true") return;
+            MCGNet.send({ type: 'chat', text: btnData.command, from: myName });
+            appendLog('Вы', btnData.command);
+        };
+
+        var isDragging = false;
+        var startX, startY, initialLeft, initialTop;
+
+        function dragStart(e) {
+            var ev = e.touches ? e.touches[0] : e;
+            isDragging = true;
+            btn.dataset.dragged = "false";
+            
+            if (btn.parentNode === hotbar) {
+                var rect = btn.getBoundingClientRect();
+                var parentRect = hud.getBoundingClientRect();
+                btn.style.position = 'absolute';
+                btn.style.left = (rect.left - parentRect.left) + 'px';
+                btn.style.top = (rect.top - parentRect.top) + 'px';
+                hud.appendChild(btn);
+            }
+            
+            var rect = btn.getBoundingClientRect();
+            var parentRect = hud.getBoundingClientRect();
+            initialLeft = rect.left - parentRect.left;
+            initialTop = rect.top - parentRect.top;
+            startX = ev.clientX;
+            startY = ev.clientY;
+        }
+
+        function dragMove(e) {
+            if (!isDragging) return;
+            var ev = e.touches ? e.touches[0] : e;
+            
+            // Защита от ошибок браузера
+            if (e.cancelable) e.preventDefault(); 
+            
+            var dx = ev.clientX - startX;
+            var dy = ev.clientY - startY;
+            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) btn.dataset.dragged = "true";
+            
+            btn.style.left = (initialLeft + dx) + 'px';
+            btn.style.top = (initialTop + dy) + 'px';
+        }
+
+        function dragEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            if (btn.dataset.dragged === "true") {
+                var hotbarRect = hotbar.getBoundingClientRect();
+                var ev = e.changedTouches ? e.changedTouches[0] : e;
+                
+                // Если отпустили над панелью — прячем обратно
+                if (ev.clientY >= hotbarRect.top && ev.clientY <= hotbarRect.bottom) {
+                    btn.style.position = 'static';
+                    btn.style.left = 'auto';
+                    btn.style.top = 'auto';
+                    hotbar.appendChild(btn);
+                    localStorage.setItem('hud_state_' + btnData.id, 'in_hotbar');
+                } else {
+                    var rect = btn.getBoundingClientRect();
+                    var parentRect = hud.getBoundingClientRect();
+                    localStorage.setItem('hud_state_' + btnData.id, JSON.stringify({
+                        left: rect.left - parentRect.left,
+                        top: rect.top - parentRect.top
+                    }));
+                }
+            }
+        }
+
+        btn.addEventListener('mousedown', dragStart);
+        window.addEventListener('mousemove', dragMove);
+        window.addEventListener('mouseup', dragEnd);
+        btn.addEventListener('touchstart', dragStart, {passive: false});
+        window.addEventListener('touchmove', dragMove, {passive: false});
+        window.addEventListener('touchend', dragEnd);
+    });
+}
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

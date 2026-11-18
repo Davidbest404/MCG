@@ -5,18 +5,19 @@
   var handlers = [];
 
   function connect(url) {
-    if (!url) url = 'ws://' + location.host + '/ws';
+    if (!url) url = location.host + '/ws';
     
-    // Автоматическая починка адреса (чтобы не было ошибок ввода)
+    // Умная починка адреса
     if (!/^wss?:\/\//i.test(url)) {
-      url = 'ws://' + url;
+      // Если мы на HTTPS (GitHub Pages), принудительно ставим wss://
+      // Если на HTTP (локально), ставим ws://
+      var protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      url = protocol + url;
     }
-    // Если нет в конце /ws, добавляем его
     if (!/\/ws$/i.test(url) && !/\/ws\?/.test(url)) {
       url = url.replace(/\/$/, '') + '/ws';
     }
 
-    // Закрываем старое соединение, если оно было
     if (ws) {
       ws.onclose = null;
       ws.close();
@@ -30,6 +31,13 @@
     ws.onmessage = function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      
+      // Обработка команды переноса на другой сервер
+      if (msg.type === 'transfer' && msg.target) {
+          emit('transfer_start', msg.target);
+          return;
+      }
+      
       emit('message', msg);
     };
   }
@@ -37,8 +45,6 @@
   function send(obj) {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify(obj));
-    } else {
-      console.warn("Нет соединения с сервером");
     }
   }
 

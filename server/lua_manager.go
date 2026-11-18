@@ -24,33 +24,54 @@ func (m *LuaManager) LoadAll() error {
 	defer m.mu.Unlock()
 	m.closeAll()
 
-	entries, err := os.ReadDir(m.dir)
-	if err != nil { return err }
-
-	for _, e := range entries {
-		if !e.IsDir() { continue }
-		path := filepath.Join(m.dir, e.Name(), "init.lua")
-		if _, err := os.Stat(path); err != nil { continue }
+	// Рекурсивно обходим папку plugins
+	err := filepath.Walk(m.dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil { return err }
+		if info.IsDir() || filepath.Ext(path) != ".lua" { return nil } // Ищем только .lua файлы
 
 		L := lua.NewState()
-		L.SetGlobal("mcg_send", L.NewFunction(func(L *lua.LState) int {
-			text := L.CheckString(1)
-			fmt.Println("[lua->client]", text)
-			return 0
-		}))
 		if err := L.DoFile(path); err != nil {
-			fmt.Printf("plugin %s: %v\n", e.Name(), err)
+			fmt.Printf("Ошибка в скрипте %s: %v\n", path, err)
 			L.Close()
-			continue
+			return nil
 		}
 		m.plugins = append(m.plugins, L)
-		fmt.Println("loaded plugin:", e.Name())
-	}
-	return nil
+		fmt.Println("Загружен скрипт:", path)
+		return nil
+	})
+	return err
 }
 
 func (m *LuaManager) Reload() error {
 	return m.LoadAll()
+}
+
+func (m *LuaManager) GetUIButtons() []map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var allButtons []map[string]string
+
+	for _, L := range m.plugins {
+		fn := L.GetGlobal("get_ui_buttons")
+		if fn.Type() != lua.LTFunction { continue }
+		
+		if err := L.CallByParam(lua.P{Fn: fn, NRet: 1, Protect: true}); err == nil {
+			ret := L.Get(-1)
+			if ret.Type() == lua.LTTable {
+				ret.(*lua.LTable).ForEach(func(_, v lua.LValue) {
+					if v.Type() == lua.LTTable {
+						btn := map[string]string{}
+						v.(*lua.LTable).ForEach(func(k, val lua.LValue) {
+							btn[k.String()] = val.String()
+						})
+						allButtons = append(allButtons, btn)
+					}
+				})
+			}
+			L.Pop(1)
+		}
+	}
+	return allButtons
 }
 
 func (m *LuaManager) OnMessage(msg map[string]any) map[string]any {
@@ -60,21 +81,31 @@ func (m *LuaManager) OnMessage(msg map[string]any) map[string]any {
 	for _, L := range m.plugins {
 		fn := L.GetGlobal("on_message")
 		if fn.Type() != lua.LTFunction { continue }
+		
 		tbl := L.NewTable()
 		for k, v := range msg { tbl.RawSetString(k, lua.LString(fmt.Sprint(v))) }
+		
 		if err := L.CallByParam(lua.P{Fn: fn, NRet: 1, Protect: true}, tbl); err == nil {
-			if ret := L.Get(-1); ret.Type() == lua.LTTable {
+			ret := L.Get(-1)
+			if ret.Type() == lua.LTTable {
 				L.Pop(1)
 				out := map[string]any{}
 				ret.(*lua.LTable).ForEach(func(k, v lua.LValue) {
-					out[k.String()] = v.String()
+					switch v.Type() {
+					case lua.LTBool:
+						out[k.String()] = lua.LVAsBool(v)
+					case lua.LTNumber:
+						out[k.String()] = float64(v.(lua.LNumber))
+					default:
+						out[k.String()] = v.String()
+					}
 				})
-				return out
+				return out // Возвращаем первый ответ
 			}
 			L.Pop(1)
 		}
 	}
-	return map[string]any{"type": "echo", "text": fmt.Sprint(msg["text"])}
+	return nil
 }
 
 func (m *LuaManager) closeAll() {
