@@ -15,24 +15,15 @@ type LuaManager struct {
 	dir     string
 }
 
-func NewLuaManager(dir string) *LuaManager {
-	return &LuaManager{dir: dir}
-}
+func NewLuaManager(dir string) *LuaManager { return &LuaManager{dir: dir} }
 
 func (m *LuaManager) LoadAll() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.Lock(); defer m.mu.Unlock()
 	m.closeAll()
-
 	err := filepath.Walk(m.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(path) != ".lua" { return err }
-
 		L := lua.NewState()
-		if err := L.DoFile(path); err != nil {
-			fmt.Printf("Ошибка в скрипте %s: %v\n", path, err)
-			L.Close()
-			return nil
-		}
+		if err := L.DoFile(path); err != nil { fmt.Printf("Ошибка в %s: %v\n", path, err); L.Close(); return nil }
 		m.plugins = append(m.plugins, L)
 		fmt.Println("Загружен скрипт:", path)
 		return nil
@@ -41,7 +32,9 @@ func (m *LuaManager) LoadAll() error {
 }
 
 func (m *LuaManager) Reload() error { return m.LoadAll() }
+func (m *LuaManager) closeAll() { for _, L := range m.plugins { L.Close() }; m.plugins = nil }
 
+// ... (GetUIButtons и OnMessage остаются без изменений) ...
 func (m *LuaManager) GetUIButtons() []map[string]string {
 	m.mu.RLock(); defer m.mu.RUnlock()
 	var allButtons []map[string]string
@@ -63,40 +56,6 @@ func (m *LuaManager) GetUIButtons() []map[string]string {
 		}
 	}
 	return allButtons
-}
-
-func (m *LuaManager) GenerateMap(width, height int, seed int64) [][]int {
-	m.mu.RLock(); defer m.mu.RUnlock()
-	
-	for _, L := range m.plugins {
-		fn := L.GetGlobal("generate_map")
-		if fn.Type() != lua.LTFunction { continue }
-		
-		if err := L.CallByParam(lua.P{Fn: fn, NRet: 1, Protect: true}, lua.LNumber(width), lua.LNumber(height), lua.LNumber(seed)); err == nil {
-			ret := L.Get(-1)
-			if ret.Type() == lua.LTTable {
-				L.Pop(1)
-				result := make([][]int, height)
-				for y := 0; y < height; y++ { result[y] = make([]int, width) }
-				ret.(*lua.LTable).ForEach(func(yKey, rowVal lua.LValue) {
-					if rowVal.Type() == lua.LTTable {
-						y := int(lua.LVAsNumber(yKey)) - 1
-						rowVal.(*lua.LTable).ForEach(func(xKey, cellVal lua.LValue) {
-							x := int(lua.LVAsNumber(xKey)) - 1
-							if y >= 0 && y < height && x >= 0 && x < width {
-								result[y][x] = int(lua.LVAsNumber(cellVal))
-							}
-						})
-					}
-				})
-				return result
-			}
-			L.Pop(1)
-		} else {
-			fmt.Println("ОШИБКА LUA при генерации карты:", err)
-		}
-	}
-	return nil
 }
 
 func (m *LuaManager) OnMessage(msg map[string]any) map[string]any {
@@ -126,52 +85,35 @@ func (m *LuaManager) OnMessage(msg map[string]any) map[string]any {
 	return nil
 }
 
-func (m *LuaManager) closeAll() {
-	for _, L := range m.plugins { L.Close() }
-	m.plugins = nil
-}
-
-// Добавь в конец файла lua_manager.go
-func (m *LuaManager) ProcessPlayerMap(username string, originalMap [][]int) [][]int {
+// НОВАЯ ФУНКЦИЯ: Генерация чанка через Lua
+func (m *LuaManager) GenerateChunk(cx, cy, size int, seed int64) [][]int {
 	m.mu.RLock(); defer m.mu.RUnlock()
 	for _, L := range m.plugins {
-		fn := L.GetGlobal("get_player_map") // Ищем функцию в Lua
+		fn := L.GetGlobal("generate_chunk")
 		if fn.Type() != lua.LTFunction { continue }
 		
-		// Конвертируем Go-карту в Lua-таблицу (для Lua это 1D или 2D массивы)
-		LuaMap := L.NewTable()
-		for y, row := range originalMap {
-			LuaRow := L.NewTable()
-			for x, cell := range row {
-				LuaRow.RawSetInt(x+1, lua.LNumber(cell))
-			}
-			LuaMap.RawSetInt(y+1, LuaRow)
-		}
-
-		// Вызываем Lua-функцию: get_player_map(username, map)
-		if err := L.CallByParam(lua.P{Fn: fn, NRet: 1, Protect: true}, lua.LString(username), LuaMap); err == nil {
+		if err := L.CallByParam(lua.P{Fn: fn, NRet: 1, Protect: true}, 
+			lua.LNumber(cx), lua.LNumber(cy), lua.LNumber(size), lua.LNumber(seed)); err == nil {
 			ret := L.Get(-1)
 			if ret.Type() == lua.LTTable {
 				L.Pop(1)
-				// Конвертируем результат обратно в Go
-				result := make([][]int, len(originalMap))
-				for y := range result { result[y] = make([]int, len(originalMap[0])) }
-				
+				result := make([][]int, size)
+				for y := 0; y < size; y++ { result[y] = make([]int, size) }
 				ret.(*lua.LTable).ForEach(func(yKey, rowVal lua.LValue) {
 					if rowVal.Type() == lua.LTTable {
 						y := int(lua.LVAsNumber(yKey)) - 1
 						rowVal.(*lua.LTable).ForEach(func(xKey, cellVal lua.LValue) {
 							x := int(lua.LVAsNumber(xKey)) - 1
-							if y >= 0 && y < len(result) && x >= 0 && x < len(result[0]) {
+							if y >= 0 && y < size && x >= 0 && x < size {
 								result[y][x] = int(lua.LVAsNumber(cellVal))
 							}
 						})
 					}
 				})
-				return result // Возвращаем измененную карту
+				return result
 			}
 			L.Pop(1)
 		}
 	}
-	return originalMap // Если Lua-фильтра нет, отдаем оригинал
+	return nil
 }

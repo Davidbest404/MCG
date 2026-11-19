@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -29,6 +30,7 @@ type Server struct {
 }
 
 func main() {
+	// ... (инициализация порта, конфига, юзеров и Lua) ...
 	defaultPort := "8080"
 	if envPort := os.Getenv("MCG_PORT"); envPort != "" { defaultPort = envPort }
 	port := flag.String("port", defaultPort, "порт сервера")
@@ -45,14 +47,6 @@ func main() {
 	}
 	s.lua.LoadAll()
 
-	log.Printf("Генерация мира с сидом: %d...\n", Config.MapSeed)
-	WorldMap = s.lua.GenerateMap(100, 100, Config.MapSeed)
-	if WorldMap == nil {
-		WorldMap = make([][]int, 100)
-		for i := range WorldMap { WorldMap[i] = make([]int, 100) }
-	}
-	log.Println("Мир сгенерирован!")
-
 	static, _ := fs.Sub(webFS, "web/static")
 	http.Handle("/", http.FileServer(http.FS(static)))
 	http.HandleFunc("/ws", s.handleWS)
@@ -65,6 +59,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+*port, nil))
 }
 
+// ... (getLocalIP, handleStatus ...) ...
 func (s *Server) getLocalIP() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil { return "127.0.0.1:" + s.port }
@@ -90,22 +85,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil { return }
 	defer c.CloseNow()
 
+	// ... (авторизация) ...
 	ctx := r.Context()
 	ip := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(ip); err == nil { ip = host }
-	
 	wsjson.Write(ctx, c, map[string]any{"type": "require_auth"})
 	var authMsg map[string]any
 	if err := wsjson.Read(ctx, c, &authMsg); err != nil { return }
 
-	if authMsg["type"] != "auth" {
-		c.Close(websocket.StatusPolicyViolation, "Ожидалась авторизация")
-		return
-	}
-
 	username := fmt.Sprint(authMsg["username"])
 	password := fmt.Sprint(authMsg["password"])
-
 	user, err := Authenticate(username, password, ip)
 	if err != nil {
 		wsjson.Write(ctx, c, map[string]any{"type": "auth_error", "text": err.Error()})
@@ -118,9 +107,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		"type": "auth_success",
 		"user": map[string]any{"username": user.Username, "is_admin": user.IsAdmin},
 		"server": map[string]any{
-			"ip": s.getLocalIP(), 
-			"name": Config.Name, 
-			"description": Config.Description,
+			"ip": s.getLocalIP(), "name": Config.Name, "description": Config.Description,
 			"coordinate_type": Config.CoordinateType,
 		},
 	})
@@ -136,13 +123,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		PlayersMu.Lock(); delete(Players, user.Username); PlayersMu.Unlock()
 	}()
 
-	WorldMapMu.RLock()
-	playerSpecificMap := s.lua.ProcessPlayerMap(user.Username, WorldMap)
-	wsjson.Write(ctx, c, map[string]any{"type": "map", "data": playerSpecificMap})
-	WorldMapMu.RUnlock()
-	
-	wsjson.Write(ctx, c, map[string]any{"type": "players_update", "players": GetAllPlayers()})
+	// Отправляем чанки вокруг игрока при входе
+	s.sendSurroundingChunks(c, user.Username)
 
+	wsjson.Write(ctx, c, map[string]any{"type": "players_update", "players": GetAllPlayers()})
 	buttons := s.lua.GetUIButtons()
 	wsjson.Write(ctx, c, map[string]any{"type": "ui_buttons", "buttons": buttons})
 
@@ -151,37 +135,55 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		if err := wsjson.Read(ctx, c, &msg); err != nil { return }
 		msg["from"] = user.Username
 
-		// ДОБАВЛЯЕМ УГОЛ КАМЕРЫ В КОНТЕКСТ ДЛЯ LUA
 		PlayersMu.RLock()
 		if p, ok := Players[user.Username]; ok {
 			msg["camera_angle"] = p.CameraAngle
+			msg["coordinate_type"] = Config.CoordinateType
 		}
 		PlayersMu.RUnlock()
 
 		reply := s.lua.OnMessage(msg)
 		if reply != nil {
-			// Если Lua вернула движение
 			if reply["type"] == "move" {
 				dx, _ := reply["dx"].(float64)
 				dy, _ := reply["dy"].(float64)
+				
+				PlayersMu.RLock()
+				oldX, oldY := Players[user.Username].X, Players[user.Username].Y
+				PlayersMu.RUnlock()
+
 				MovePlayer(user.Username, dx, dy, 0, 0)
 				broadcastPlayerMove(s, user.Username)
+
+				// Если игрок перешел в новый чанк, шлем новые
+				PlayersMu.RLock()
+				newX, newY := Players[user.Username].X, Players[user.Username].Y
+				PlayersMu.RUnlock()
+				
+				oldCx := int(math.Floor(oldX / CHUNK_SIZE))
+				oldCy := int(math.Floor(oldY / CHUNK_SIZE))
+				newCx := int(math.Floor(newX / CHUNK_SIZE))
+				newCy := int(math.Floor(newY / CHUNK_SIZE))
+
+				if oldCx != newCx || oldCy != newCy {
+					s.sendSurroundingChunks(c, user.Username)
+				}
 				continue
 			}
 
-			// Если Lua вернула поворот камеры
 			if reply["type"] == "camera_rotate" {
 				angle, _ := reply["angle"].(float64)
 				PlayersMu.Lock()
 				if p, ok := Players[user.Username]; ok {
-					p.CameraAngle += angle // Меняем угол на сервере
-					reply["current_angle"] = p.CameraAngle // Отправляем клиенту для синхронизации
+					p.CameraAngle += angle
+					reply["current_angle"] = p.CameraAngle
 				}
 				PlayersMu.Unlock()
 				wsjson.Write(ctx, c, reply)
 				continue
 			}
 
+			// ... (остальные обработки broadcast, sender_text и т.д.) ...
 			if isBroadcast, ok := reply["broadcast"].(bool); ok && isBroadcast {
 				s.broadcastExcept(c, reply)
 			} else if senderText, ok := reply["sender_text"].(string); ok {
@@ -195,7 +197,39 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Вспомогательная функция: генерация и отправка чанков 3x3 вокруг игрока
+func (s *Server) sendSurroundingChunks(c *websocket.Conn, username string) {
+	PlayersMu.RLock()
+	p := Players[username]
+	PlayersMu.RUnlock()
+
+	cx := int(math.Floor(p.X / CHUNK_SIZE))
+	cy := int(math.Floor(p.Y / CHUNK_SIZE))
+
+	for dx := -1; dx <= 1; dx++ {
+		for dy := -1; dy <= 1; dy++ {
+			targetCx := cx + dx
+			targetCy := cy + dy
+			key := chunkKey(targetCx, targetCy)
+
+			WorldMapMu.Lock()
+			chunkData, exists := WorldChunks[key]
+			if !exists {
+				// Генерируем новый чанк
+				chunkData = s.lua.GenerateChunk(targetCx, targetCy, CHUNK_SIZE, Config.MapSeed)
+				WorldChunks[key] = chunkData
+			}
+			WorldMapMu.Unlock()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			wsjson.Write(ctx, c, map[string]any{"type": "chunk", "cx": targetCx, "cy": targetCy, "data": chunkData})
+			cancel()
+		}
+	}
+}
+
 func broadcastPlayerMove(s *Server, username string) {
+	// ... (отправка player_moved) ...
 	updateMsg := map[string]any{"type": "player_moved", "username": username}
 	PlayersMu.RLock()
 	if p, ok := Players[username]; ok { 
@@ -205,7 +239,7 @@ func broadcastPlayerMove(s *Server, username string) {
 	s.broadcastExcept(nil, updateMsg)
 }
 
-// ... (остальные функции без изменений)
+// ... (остальные функции handleAdminUsers, handleAdminBan, broadcastExcept, handleReload) ...
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	usersMu.RLock(); defer usersMu.RUnlock()

@@ -19,29 +19,26 @@
 
     MCGRender2D.init(canvas);
 
-    // --- ОБРАБОТКА КЛАВИАТУРЫ ---
     window.addEventListener('keydown', function(e) {
       if (e.target.tagName === 'INPUT' || !isAuthenticated) return;
 
       var customBtns = JSON.parse(localStorage.getItem('custom_hud_buttons') || '[]');
       var allBtns = serverButtons.concat(customBtns);
       
-      // 1. Проверяем, назначена ли эта клавиша на какую-то кнопку
       for (var i = 0; i < allBtns.length; i++) {
         var b = allBtns[i];
-        var boundKey = localStorage.getItem('keybind_' + b.id) || b.key;
+        var keys = JSON.parse(localStorage.getItem('keys_' + b.id) || '[]');
+        if (keys.length === 0 && b.key) keys = [b.key]; // Совместимость со старым форматом
         
-        if (boundKey && boundKey === e.code) {
+        if (keys.indexOf(e.code) !== -1) {
             e.preventDefault();
-            // Отправляем просто команду! Никакой математики
             MCGNet.send({ type: 'chat', text: b.command, from: myName }); 
             appendLog('Вы', b.command);
             return; 
         }
       }
 
-      // 2. Если это не кастомная кнопка, шлем сырое нажатие клавиши на сервер (в Lua)
-      // Теперь JS не знает, что такое WASD. Сервер сам решит, как это обработать.
+      // Отправляем сырое нажатие клавиши в Lua
       MCGNet.send({ type: 'input', key: e.code });
     });
 
@@ -50,12 +47,8 @@
       if (type === 'close') { status.textContent = 'отключено'; status.style.color = '#f44336'; appendLog('Система', 'Соединение потеряно.'); }
       
       if (type === 'message') {
-        if (data.type === 'require_auth') {
-          document.getElementById('auth-modal').classList.remove('hidden');
-        } 
-        else if (data.type === 'auth_error') {
-          document.getElementById('auth-error').textContent = data.text;
-        } 
+        if (data.type === 'require_auth') { document.getElementById('auth-modal').classList.remove('hidden'); } 
+        else if (data.type === 'auth_error') { document.getElementById('auth-error').textContent = data.text; } 
         else if (data.type === 'auth_success') {
           isAuthenticated = true;
           document.getElementById('auth-modal').classList.add('hidden');
@@ -71,32 +64,22 @@
           
           requestAnimationFrame(function() { MCGRender2D.resize(); });
         } 
-        else if (data.type === 'map') { MCGRender2D.setMap(data.data); }
+        else if (data.type === 'chunk') { MCGRender2D.setChunk(data.cx, data.cy, data.data); }
         else if (data.type === 'players_update') { MCGRender2D.setPlayers(data.players); }
         else if (data.type === 'player_moved') { MCGRender2D.updatePlayer(data.username, data.x, data.y); }
         else if (data.type === 'camera_rotate') { 
-            // Сервер уже посчитал угол, просто применяем его
-            if (data.current_angle !== undefined) {
-                MCGRender2D.setCameraAngle(data.current_angle);
-            } else {
-                MCGRender2D.rotateCamera(data.angle); 
-            }
+            if (data.current_angle !== undefined) MCGRender2D.setCameraAngle(data.current_angle);
+            else MCGRender2D.rotateCamera(data.angle); 
         }
         else if (data.type === 'ui_buttons') { serverButtons = data.buttons; rebuildAllButtons(); } 
         else { handleMessage(data); }
       }
     });
 
-    // ... (обработчики форм, редактора и т.д. остаются такими же)
     document.getElementById('server-ip').onclick = function() { this.classList.toggle('show'); };
-    
     document.getElementById('auth-form').onsubmit = function(e) {
       e.preventDefault();
-      MCGNet.send({
-        type: 'auth',
-        username: document.getElementById('auth-username').value.trim(),
-        password: document.getElementById('auth-password').value
-      });
+      MCGNet.send({ type: 'auth', username: document.getElementById('auth-username').value.trim(), password: document.getElementById('auth-password').value });
     };
 
     document.getElementById('chat-form').addEventListener('submit', function (e) {
@@ -122,18 +105,22 @@
       var label = document.getElementById('btn-label').value.trim();
       var command = document.getElementById('btn-command').value.trim();
       var key = document.getElementById('btn-key').value.trim();
-      
       if (!label || !command) return;
+      
       var customBtns = JSON.parse(localStorage.getItem('custom_hud_buttons') || '[]');
-      customBtns.push({ id: 'custom_' + Date.now(), label: label, command: command, key: key });
+      customBtns.push({ id: 'custom_' + Date.now(), label: label, command: command, key: "" });
       localStorage.setItem('custom_hud_buttons', JSON.stringify(customBtns));
+      
+      if (key) {
+          var newBtnId = customBtns[customBtns.length - 1].id;
+          localStorage.setItem('keys_' + newBtnId, JSON.stringify([key]));
+      }
       this.reset(); renderEditorList(); rebuildAllButtons();
     };
 
     showServerList();
   }
 
-  // ... (Функции showServerList, handleMessage, appendLog, renderEditorList остаются без изменений)
   function showServerList() {
     var container = document.getElementById('server-list-screen');
     var listEl = document.getElementById('saved-servers');
@@ -193,39 +180,63 @@
     if (allBtns.length === 0) { list.innerHTML = '<li style="color:#888;">Нет доступных кнопок</li>'; return; }
     
     allBtns.forEach(function(btn) {
-      var boundKey = localStorage.getItem('keybind_' + btn.id) || btn.key || '';
+      var keys = JSON.parse(localStorage.getItem('keys_' + btn.id) || '[]');
+      if (keys.length === 0 && btn.key) keys = [btn.key]; // Legacy
+      
       var li = document.createElement('li');
-      li.innerHTML = `<span><b>${btn.label}</b> (${btn.command}) [<span style="color:#ff9800">${boundKey || '---'}</span>]</span>`;
+      li.innerHTML = `<span><b>${btn.label}</b> (${btn.command})</span>`;
       
-      var keyBtn = document.createElement('button');
-      keyBtn.textContent = 'Назначить';
-      keyBtn.style.background = '#2196f3';
-      keyBtn.style.padding = '4px 8px';
+      // Список назначенных клавиш
+      var keysContainer = document.createElement('div');
+      keysContainer.style.display = 'flex';
+      keysContainer.style.gap = '5px';
+      keysContainer.style.flexWrap = 'wrap';
+      keysContainer.style.marginTop = '5px';
       
-      keyBtn.onclick = function() {
-        keyBtn.textContent = 'Жми клавишу...';
-        keyBtn.style.background = '#ff9800';
-        
+      keys.forEach(function(k, idx) {
+          var kSpan = document.createElement('span');
+          kSpan.style.background = '#444';
+          kSpan.style.padding = '2px 5px';
+          kSpan.style.borderRadius = '3px';
+          kSpan.style.cursor = 'pointer';
+          kSpan.textContent = k + ' ✖';
+          kSpan.onclick = function() {
+              keys.splice(idx, 1);
+              localStorage.setItem('keys_' + btn.id, JSON.stringify(keys));
+              renderEditorList();
+          };
+          keysContainer.appendChild(kSpan);
+      });
+      
+      var addKeyBtn = document.createElement('button');
+      addKeyBtn.textContent = '+ Клавиша';
+      addKeyBtn.style.background = '#2196f3';
+      addKeyBtn.style.padding = '4px 8px';
+      addKeyBtn.style.fontSize = '12px';
+      addKeyBtn.onclick = function() {
+        addKeyBtn.textContent = 'Жми...';
+        addKeyBtn.style.background = '#ff9800';
         function captureKey(e) {
             e.preventDefault();
             var newKey = e.code; 
-            
-            localStorage.setItem('keybind_' + btn.id, newKey);
+            if (keys.indexOf(newKey) === -1) keys.push(newKey);
+            localStorage.setItem('keys_' + btn.id, JSON.stringify(keys));
             window.removeEventListener('keydown', captureKey, true);
             renderEditorList(); 
         }
-        
         window.addEventListener('keydown', captureKey, true);
       };
-      
-      li.appendChild(keyBtn);
+      keysContainer.appendChild(addKeyBtn);
+      li.appendChild(keysContainer);
 
+      // Удаление кастомной кнопки
       var isCustom = customBtns.find(c => c.id === btn.id);
       if (isCustom) {
         var delBtn = document.createElement('button');
         delBtn.textContent = 'Удалить'; 
         delBtn.style.background = '#f44336'; 
         delBtn.style.padding = '4px 8px';
+        delBtn.style.marginTop = '5px';
         delBtn.onclick = function() {
           customBtns.splice(customBtns.indexOf(isCustom), 1);
           localStorage.setItem('custom_hud_buttons', JSON.stringify(customBtns));
@@ -233,6 +244,7 @@
         };
         li.appendChild(delBtn);
       }
+      
       list.appendChild(li);
     });
   }
@@ -247,15 +259,12 @@
       
       if (savedState === 'in_hotbar' || !savedState) { hotbar.appendChild(btn); } 
       else {
-        var pos = JSON.parse(savedState); 
-        btn.style.position = 'absolute'; btn.style.left = pos.left + 'px'; btn.style.top = pos.top + 'px'; hud.appendChild(btn);
+        var pos = JSON.parse(savedState); btn.style.position = 'absolute'; btn.style.left = pos.left + 'px'; btn.style.top = pos.top + 'px'; hud.appendChild(btn);
       }
       
       btn.onclick = function(e) {
         if (btn.dataset.dragged === "true") return;
-        // Кнопки теперь тоже просто шлют команду, никакой математики
-        MCGNet.send({ type: 'chat', text: btnData.command, from: myName }); 
-        appendLog('Вы', btnData.command);
+        MCGNet.send({ type: 'chat', text: btnData.command, from: myName }); appendLog('Вы', btnData.command);
       };
       
       var isDragging = false, startX, startY, initialLeft, initialTop;
@@ -268,14 +277,11 @@
         var rect = btn.getBoundingClientRect(); var parentRect = hud.getBoundingClientRect();
         initialLeft = rect.left - parentRect.left; initialTop = rect.top - parentRect.top; startX = ev.clientX; startY = ev.clientY;
       }
-      
       function dragMove(e) {
         if (!isDragging) return; var ev = e.touches ? e.touches[0] : e; if (e.cancelable) e.preventDefault(); 
-        var dx = ev.clientX - startX; var dy = ev.clientY - startY; 
-        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) btn.dataset.dragged = "true";
+        var dx = ev.clientX - startX; var dy = ev.clientY - startY; if (Math.abs(dx) > 5 || Math.abs(dy) > 5) btn.dataset.dragged = "true";
         btn.style.left = (initialLeft + dx) + 'px'; btn.style.top = (initialTop + dy) + 'px';
       }
-      
       function dragEnd(e) {
         if (!isDragging) return; isDragging = false;
         if (btn.dataset.dragged === "true") {
@@ -284,17 +290,13 @@
             btn.style.position = 'static'; btn.style.left = 'auto'; btn.style.top = 'auto'; hotbar.appendChild(btn); localStorage.setItem('hud_state_' + btnData.id, 'in_hotbar');
           } else {
             var rect = btn.getBoundingClientRect(); var parentRect = hud.getBoundingClientRect();
-            var maxX = parentRect.width - rect.width;
-            var maxY = parentRect.height - rect.height;
-            var newLeft = Math.max(0, Math.min(rect.left - parentRect.left, maxX));
-            var newTop = Math.max(0, Math.min(rect.top - parentRect.top, maxY));
-            
+            var maxX = parentRect.width - rect.width; var maxY = parentRect.height - rect.height;
+            var newLeft = Math.max(0, Math.min(rect.left - parentRect.left, maxX)); var newTop = Math.max(0, Math.min(rect.top - parentRect.top, maxY));
             btn.style.left = newLeft + 'px'; btn.style.top = newTop + 'px';
             localStorage.setItem('hud_state_' + btnData.id, JSON.stringify({ left: newLeft, top: newTop }));
           }
         }
       }
-      
       btn.addEventListener('mousedown', dragStart); window.addEventListener('mousemove', dragMove); window.addEventListener('mouseup', dragEnd);
       btn.addEventListener('touchstart', dragStart, {passive: false}); window.addEventListener('touchmove', dragMove, {passive: false}); window.addEventListener('touchend', dragEnd);
     });
