@@ -4,10 +4,10 @@ function on_message(msg)
 
     if msg.type == "input" then
         -- Дефолтные настройки (можно удалить и оставить пустым, если игроки всё биндят)
-        if msg.key == "KeyW" then baseDy = -1 end
-        if msg.key == "KeyS" then baseDy = 1 end
-        if msg.key == "KeyA" then baseDx = -1 end
-        if msg.key == "KeyD" then baseDx = 1 end
+        -- if msg.key == "KeyW" then baseDy = -1 end
+        -- if msg.key == "KeyS" then baseDy = 1 end
+        -- if msg.key == "KeyA" then baseDx = -1 end
+        -- if msg.key == "KeyD" then baseDx = 1 end
     elseif msg.type == "chat" then
         if msg.text == "!up" then baseDy = -1 end
         if msg.text == "!down" then baseDy = 1 end
