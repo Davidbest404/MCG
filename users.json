@@ -1,4 +1,13 @@
 {
+  "Davib": {
+    "username": "Davib",
+    "password_hash": "$2a$10$DvijuP2BTRsVgFJ6inH1o.znL.VzxlKngVFA8tuV4rn6AVIB8Yq26",
+    "ips": [
+      "127.0.0.1"
+    ],
+    "is_banned": false,
+    "is_admin": false
+  },
   "David": {
     "username": "David",
     "password_hash": "$2a$10$X1Mz5v7u/rTYK3Vqwl8Xpuf4tjRJLOgFXIW0Y7OkI.OxX3WKp8lOW",
@@ -43,7 +52,8 @@
     "username": "Пьяный",
     "password_hash": "$2a$10$V1/SZ/3r9hGrY519qtzR8O9bikFMpU8Ih8PcdXzmchf4SdOAk4EB.",
     "ips": [
-      "192.168.31.123"
+      "192.168.31.123",
+      "127.0.0.1"
     ],
     "is_banned": false,
     "is_admin": false
